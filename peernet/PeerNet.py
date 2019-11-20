@@ -58,7 +58,7 @@ class PeerNet:
             t.start()
         for index, thread in enumerate(threads):
             thread.join()
-        print(bold('DONE'))
+        print(bold('Training DONE'))
 
     def info(self):
         # log('info', f"PeerNet: {self.name}")

@@ -18,21 +18,23 @@ from .message import response_hello, response_model, request_exchange, response_
 
 class NodeConnection(threading.Thread):
 
-    def __init__(self, server, sock, peer, callback, out):
+    def __init__(self, server, sock, peer, callback):
         super(NodeConnection, self).__init__()
         self.id = unique_id(10)
-        self.host = peer['host']
-        self.port = peer['port']
-        self.peer = peer
         self.server = server
         self.sock = sock
+        if peer.get('ctype', '') == "In":
+            self.host = peer['chost']
+            self.port = peer['cport']
+            log('success', f"{self.server.pname}: [S] Connection started with  Node({peer['name']})")
+        else:
+            self.host = peer['shost']
+            self.port = peer['sport']
+            log('success', f"{self.server.pname}: [C] Connection accepted from Node({peer['name']})")
+        self.peer = peer
         self.callback = callback
         self.terminate_flag = threading.Event()
         self.lock = threading.RLock()
-        if out:
-            log('success', f"{self.server.pname}: Connection accepted from Node({peer['name']})")
-        else:
-            log('success', f"{self.server.pname}: Connection started with  Node({peer['name']})")
 
     def send(self, message):
         try:
@@ -50,7 +52,7 @@ class NodeConnection(threading.Thread):
         # Timeout, so the socket can be closed when it is dead!
         self.sock.settimeout(10.0)
         # Send init message to exchange necessary nodes information in case of InNode
-        if self.peer.get('tmp'):
+        if self.peer.get('ctype', '') == "In":
             self.send(request_exchange(self.server))
 
         while not self.terminate_flag.is_set():
@@ -86,7 +88,6 @@ class NodeConnection(threading.Thread):
                     self.do_model(data)
                 # responses ---------------------------------------
                 elif data['mtype'] == protocol.RESPONSE_EXCHANGE:
-                    print(f"RESPONSE")
                     self.update_info(data)
                 elif data['mtype'] == protocol.RESPONSE_HELLO:
                     self.handle_response(protocol.RESPONSE_HELLO, data)
@@ -119,19 +120,17 @@ class NodeConnection(threading.Thread):
     def do_exchange(self, data):
         message = response_exchange(self.server)
         self.send(message)
-        print(f"{self.server.pname}")
 
     def update_info(self, data):
-        sender = data['sender']
-        for p in self.server.peers:
-            if p['host'] == sender['host'] and p['host'] == sender['host']:
-                p.update(sender)
-                self.peer = p
-                p.update({'conn': self, 'connected': True})
-                return
-        self.peer = sender
-        sender.update({'conn': self, 'connected': True})
-        self.server.peers.append(sender)
+        s = data['sender']
+        upeer = next((p for p in self.server.peers if p["shost"] == s['shost'] and p["sport"] == s['sport']), {})
+        if upeer:
+            upeer.update({'name': s['name'], 'shost': s['shost'], 'sport': s['sport'], 'conn': self, 'connected': True})
+            self.peer = upeer
+        else:
+            s.update({'chost': self.host, 'cport': self.port, 'conn': self, 'connected': True})
+            self.server.peers.append(s)
+            self.peer = s
 
     def handle_response(self, mtype, data):
         pid = peer_id(self.peer)

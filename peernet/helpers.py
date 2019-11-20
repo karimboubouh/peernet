@@ -21,7 +21,7 @@ def unique_id(length=6):
 
 
 def peer_id(peer):
-    return f"{peer['host']}:{peer['port']}"
+    return f"{peer['shost']}:{peer['sport']}"
 
 
 def sample(data, n):

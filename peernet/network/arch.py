@@ -9,5 +9,7 @@ def full_network(nodes: List[Node]):
         for n in nodes:
             if node.name != n.name:
                 node.peers += [
-                    {'name': f"{n.name}", 'host': n.host, 'port': n.port, 'weight': 1, 'conn': None,
-                     'connected': False}]
+                    {
+                        'name': f"{n.name}", 'shost': n.host, 'sport': n.port, 'chost': n.host, 'cport': n.port,
+                        'ctype': '', 'weight': 1, 'conn': None, 'connected': False
+                    }]

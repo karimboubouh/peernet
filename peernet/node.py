@@ -29,13 +29,13 @@ class Node(threading.Thread):
         self.timeout_ms = timeout_ms
         # Events are send back to the given callback
         self.callback = callback
-        # List of node peers (ex:[{host, port, weight, [node, conn, ...]}...])
+        # List of node peers (ex:[{shost, sport, weight, [node, conn, ...]}...])
         self.peers = []
         # Nodes (Threads) that have established a connection with this node N->(self)
         # (ex: [NodeConnection])
-        self.nodesIn = []  # type: List[NodeConnection]
+        self.nodesIn = []
         # Nodes (Threads) that this nodes is connected to (self)->N
-        self.nodesOut = []  # type: List[NodeConnection]
+        self.nodesOut = []
         # When this flag is set, the node will stop and close
         self.terminate_flag = threading.Event()
         # Responses
@@ -63,20 +63,21 @@ class Node(threading.Thread):
             try:
                 log('info', f"{self.pname}: Waiting for incoming connections ...")
                 conn, add = self.sock.accept()
-                tmp_peer = {'name': add[1], 'host': add[0], 'port': add[1], 'tmp': True}
-                thread_client = NodeConnection(self, conn, tmp_peer, self.callback, False)
+                tmp_peer = {'name': add[1], 'chost': add[0], 'cport': add[1], 'ctype': "In"}
+                thread_client = NodeConnection(self, conn, tmp_peer, self.callback)
                 thread_client.start()
-                self.nodesIn.append(thread_client)
-                # self._set_peer_node(client_peer, thread_client)
+                self.nodesIn.append(thread_client)  # TODO Remove
+                # self._set_peer_node(client_peer, thread_client) # TODO Remove
                 self.event_node_connected(tmp_peer, thread_client)
             except socket.timeout as e:
                 log('exception', f"{self.pname}: Socket timeout!\n{e}")
             except Exception as e:
                 log('exception', f"{self.pname}: Exception!\n{e}")
                 traceback.print_exc()
-            time.sleep(0.01)
+            # time.sleep(0.01)
 
         log('info', f"{self.pname}: Terminating connections ...")
+        # TODO handle this via peers list
         for t in self.nodesIn:
             t.stop()
         for t in self.nodesOut:
@@ -93,13 +94,9 @@ class Node(threading.Thread):
     def stop(self):
         self.terminate_flag.set()
 
-    # Setup a new connection thread
-    def new_connection___(self, connection, client_address, callback):
-        return NodeConnection(self, connection, client_address, callback)
-
     # Make a connection with a node
     def connect(self, peer, info=None):
-        if peer['host'] == self.host and peer['port'] == self.port:
+        if peer['shost'] == self.host and peer['sport'] == self.port:
             log('warning', f"Cannot connect with yourself!")
             return None
         if peer.get('connected') is True:
@@ -120,8 +117,6 @@ class Node(threading.Thread):
         self._clean_peers()
         if self._is_peer_ready(peer):
             try:
-                if peer['conn'] is None:
-                    peer['conn'] = self.connect(peer)
                 peer['conn'].send(message)
             except Exception as e:
                 log('exception', f"{self.pname}: -> Send: Error while sending message to Node({peer['name']})\n{e}")
@@ -178,36 +173,14 @@ class Node(threading.Thread):
 
     # Check if a node is known for this node
     def _is_peer_ready(self, peer):
-        for p in self.peers:
-            if p['host'] == peer['host'] and p['port'] == peer['port']:
-                if peer['connected']:
-                    return True
-                else:
-                    return self.connect(peer)
-        return False
-
-    # update node's peers list with new peer if it doesn't exist already
-    def _update_peers(self, client_address):
-        host = client_address[0]
-        port = client_address[1]
-        for p in self.peers:
-            if p['host'] == host and p['port'] == port:
-                return p
-        peer = {'name': f"{host}:{port}", 'host': host, 'port': port, 'weight': 0, 'conn': None, 'connected': False}
-        # TODO: add name
-        self.peers.append(peer)
-        return peer
-
-    # update peer information
-    def _update_peer(self, peer, **kwargs):
-        for p in self.peers:
-            if p['host'] == peer['host'] and p['port'] == peer['port']:
-                p.update(kwargs)
-                return p
-        return False
+        if peer['connected']:
+            return True
+        else:
+            return self.connect(peer)
 
     # update peer's node attribute
     def _set_peer_node(self, peer, node):
+        # TODO update it or remove
         for p in self.peers:
             if p['host'] == peer['host'] and p['port'] == peer['port']:
                 p['conn'] = node
@@ -221,12 +194,18 @@ class Node(threading.Thread):
             # creates a client socket and connects to a peer
             sock = create_tcp_socket()
             sock.settimeout(self.timeout_ms)
-            sock.connect((peer['host'], peer['port']))
+            sock.connect((peer['shost'], peer['sport']))
             # Create a communication thread and add it to nodesOut
-            thread_client = NodeConnection(self, sock, peer, self.callback, True)
+            thread_client = NodeConnection(self, sock, peer, self.callback)
             thread_client.start()
-            self.nodesOut.append(thread_client)
-            peer = self._update_peer(peer, conn=thread_client, connected=True)
+            self.nodesOut.append(thread_client)  # TODO remove
+            upeer = next((p for p in self.peers if p["shost"] == peer['shost'] and p["sport"] == peer['sport']), {})
+            if upeer:
+                upeer.update({'conn': thread_client, 'connected': True})
+                peer = upeer
+            else:
+                log('exception', f"{self.pname}: -> Connect: Unknown node({peer['name']})")
+                return False
             self.event_connected_with_node(peer)
             return thread_client
         except Exception as e:
@@ -278,19 +257,11 @@ class Node(threading.Thread):
     def get_message_count_recv(self):
         return self.message_count_recv
 
-    def get_peer_by_address(self, client_address):
-        host = client_address[0]
-        port = client_address[1]
-        for peer in self.peers:
-            if peer['host'] == host and peer['port'] == port:
-                return peer
-        return None
-
     def get_random_peer(self):
         log('info', f"{self.pname}: Select a random peer")
         peer = random.choice(self.peers)
         if self.connect(peer) is not None:
-            time.sleep(0.01)  # wait for message exchange to take place
+            time.sleep(0.1)  # wait for message exchange to take place
             return peer
         else:
             return None

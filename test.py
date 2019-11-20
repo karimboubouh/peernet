@@ -49,8 +49,18 @@ peer = random.choice(a)
 # x = random.sample(dictionary, 3)
 # print(x)
 
-import numpy as np
-a = "2.4"
-b = "4"
-x = np.sqrt(81)
+# import numpy as np
+# a = "2.4"
+# b = "4"
+# x = np.sqrt(81)
+# print(x)
+
+
+peers = [{'A': 1, 'B': 3, 'C': 11}, {'A': 2, 'B': 6, 'C': 22}, {'A': 1, 'B': 7, 'C': 33}, {'A': 4, 'B': 8, 'C': 44}]
+
+x = next((p for p in peers if p["A"] == 1 and p["B"] == 7), False)
+if x:
+    x.update({'C': 123, 'D': "Hello"})
+else:
+    peers.append({})
 print(x)
