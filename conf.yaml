@@ -1,0 +1,32 @@
+# Sample configuration file for a multi-core machine
+# Each worker is running on a seperate core
+---
+- nodes:
+  - {name: w1, host: localhost, port: 45000}
+  - {name: w2, host: localhost, port: 45001}
+  - {name: w3, host: localhost, port: 45002}
+  - {name: w4, host: localhost, port: 45003}
+  - {name: w5, host: localhost, port: 45004}
+  - {name: w6, host: localhost, port: 45005}
+  - {name: w7, host: localhost, port: 45006}
+  - {name: w8, host: localhost, port: 45007}
+
+# The probability of initiating a fetch parameter request
+- fetch_probability: 1
+
+# The timeout value is used for flow-control
+- timeout_ms: 2500
+
+# Choose interpolation method: clock, loss or constant
+- interpolation: constant
+
+# Diverge models when loss is reaching the value specified here (use 0 to disable)
+- divergence_threshold: 0.2
+
+# Individual interpolation methods configuration:
+
+- constant: { value: 0.5 }
+
+- clock: 0
+
+- loss: 0
