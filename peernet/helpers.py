@@ -1,6 +1,7 @@
 import socket
 import random
 import string
+import time
 
 from .constants import *
 
@@ -34,6 +35,15 @@ def sample(data, n):
     return random.sample(data, n)
 
 
+def wait_until(predicate, timeout, period=0.25, *args, **kwargs):
+    mustend = time.time() + timeout
+    while time.time() < mustend:
+        if predicate(*args, **kwargs):
+            return True
+        time.sleep(period)
+    return False
+
+
 def log(mtype, message=''):
     if mtype == 'exception' and DEBUG_LEVEL > 0:
         print(f"\033[31mEXCEPTION >>\033[0m {message}")
@@ -47,8 +57,11 @@ def log(mtype, message=''):
     if mtype == 'warning' and DEBUG_LEVEL > 2:
         print('\033[33m', "WARNING >>  ", '\033[0m', message)
         return
-    if mtype == 'success' and DEBUG_LEVEL > 1:
+    if mtype == 'success' and DEBUG_LEVEL > 2:
         print(f"\033[32mSUCCESS   >>\033[0m {message}")
+        return
+    if mtype == 'result' and DEBUG_LEVEL > -1:
+        print(f"\033[32mRESULT    >> {message}\033[0m")
         return
     if mtype == 'info' and DEBUG_LEVEL > 3:
         print(f"\033[34mINFO      >>\033[0m {message}")
@@ -56,6 +69,7 @@ def log(mtype, message=''):
     if message == '' and DEBUG_LEVEL > 0:
         print(f"\033[31mDEBUG     >> {mtype} {message}\033[0m")
         return
+
 
 def bold(text):
     return f"\033[1m{text}\033[0m"

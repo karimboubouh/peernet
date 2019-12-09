@@ -1,6 +1,47 @@
 from . import protocol
 
 
+def request_subscribe(node):
+    return {
+        'mtype': protocol.REQUEST_SUBSCRIBE,
+        'sender': {'name': node.name, 'shost': node.host, 'sport': node.port},
+    }
+
+
+def response_subscribe(node):
+    return {
+        'mtype': protocol.RESPONSE_SUBSCRIBE,
+        'sender': {'name': node.name, 'shost': node.host, 'sport': node.port},
+    }
+
+
+def request_information(node):
+    return {
+        'mtype': protocol.REQUEST_INFORMATION,
+        'sender': {'name': node.name, 'shost': node.host, 'sport': node.port},
+        'status': protocol.NO_ERROR,
+        'payload': {'data_size': len(node.ldata)}
+    }
+
+
+def response_information(node):
+    return {
+        'mtype': protocol.RESPONSE_INFORMATION,
+        'sender': {'name': node.name, 'shost': node.host, 'sport': node.port},
+        'status': protocol.NO_ERROR,
+        'payload': {'data_size': len(node.ldata)}
+    }
+
+
+def exchange_model(node, respond=True):
+    return {
+        'mtype': protocol.EXCHANGE_MODEL,
+        'sender': {'name': node.name, 'shost': node.host, 'sport': node.port},
+        'status': protocol.NO_ERROR,
+        'payload': {'model': node.get_model(), 'respond': respond}
+    }
+
+
 # Request messages ------------------------------------------------------------
 
 def request_exchange(node):
@@ -8,7 +49,7 @@ def request_exchange(node):
         'mtype': protocol.REQUEST_EXCHANGE,
         'sender': {'name': node.name, 'shost': node.host, 'sport': node.port},
         'status': protocol.NO_ERROR,
-        'payload': {'accept': True, 'info': None}
+        'payload': {'data_size': len(node.ldata)}
     }
 
 
@@ -37,7 +78,7 @@ def response_exchange(node):
         'mtype': protocol.RESPONSE_EXCHANGE,
         'sender': {'name': node.name, 'shost': node.host, 'sport': node.port},
         'status': protocol.NO_ERROR,
-        'payload': {'accept': True, 'info': None}
+        'payload': {'data_size': len(node.ldata)}
     }
 
 

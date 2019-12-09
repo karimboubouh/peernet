@@ -5,6 +5,8 @@ import threading
 import traceback
 from typing import List
 
+import numpy as np
+
 from .protocol import *
 from .node_connection import NodeConnection
 from .helpers import log, bold, unique_id, create_tcp_socket, peer_id
@@ -19,14 +21,26 @@ class Node(threading.Thread):
     # Node class constructor
     def __init__(self, node_config, timeout_ms, callback):
         super(Node, self).__init__()
+        # Identification
         self.id = unique_id(10)
         self.name = node_config['name']
+        self.ldata = {}
         # Server details
         self.host = node_config['host']
         self.port = node_config['port']
-        self.ldata = {}
-        self.model = None
         self.timeout_ms = timeout_ms
+        # Algorithm details
+        self.solitary_model = None
+        self.model = None
+        self.models = {}
+        self.W = {}
+        self.D = 0.0  # represent the value Dii
+        self.c = 1  # Confidence values
+        self.alpha = 0.5
+        self.stop_condition = 10
+        # Implementation details
+        self.excluded_peers = []
+        self.lock = threading.RLock()
         # Events are send back to the given callback
         self.callback = callback
         # List of node peers (ex:[{shost, sport, weight, [node, conn, ...]}...])
@@ -54,6 +68,7 @@ class Node(threading.Thread):
 
     def init(self):
         # setup default peers
+        self.update_weights()
         # self._init_peers()
         # Start the TCP/IP server
         self._init_server()
@@ -94,6 +109,18 @@ class Node(threading.Thread):
     def stop(self):
         self.terminate_flag.set()
 
+    # Connect node with its neighbors
+    def connect_neighbors(self):
+        status = {}
+        for peer in self.peers:
+            if peer['shost'] == self.host and peer['sport'] == self.port:
+                status.update({peer['name']: False})
+            if peer.get('connected') is not True:
+                if not self._connection(peer):
+                    status.update({peer['name']: False})
+            status.update({peer['name']: True})
+        return status
+
     # Make a connection with a node
     def connect(self, peer, info=None):
         if peer['shost'] == self.host and peer['sport'] == self.port:
@@ -101,7 +128,7 @@ class Node(threading.Thread):
             return None
         if peer.get('connected') is True:
             return peer['conn']
-        return self._new_connection(peer, info)
+        return self._connection(peer, info)
 
     # Disconnect with a node. It sends a last message to the node!
     def disconnect(self, node):
@@ -145,14 +172,46 @@ class Node(threading.Thread):
         else:
             raise Exception(f"Wrong type for argument 'include': ({type(include)})!")
 
+    # Calculate model updates over network
+    def calculate_update(self, data):
+        with self.lock:
+            self.stop_condition -= 1
+            sigma = np.zeros((self.model.parameters.shape[0], 1))
+            for name, model in self.models.items():
+                sigma += self.W[name] / self.D * model.parameters
+            log("success", f"{self.pname}: Model to be updated {sum(self.model.parameters)}")
+
+            self.model.parameters = (self.alpha + (1 - self.alpha) * self.c) ** -1 * (
+                    self.alpha * sigma + (1 - self.alpha) * self.c * self.solitary_model.parameters)
+            log("success", f"{self.pname}: Model updated {sum(self.model.parameters)}")
+
     def get_model(self):
         return self.model
+
+    def update_models(self, index, model):
+        self.models[index] = model
+
+    def check_exchange(self):
+        update = self.stop_condition > 0
+        return update
+
+    def exclude_peer(self, peer):
+        if peer not in self.excluded_peers:
+            self.excluded_peers.append(peer)
 
     # Local functions ---------------------------------------------------------
 
     # Initialize the default set of peers
     def _init_peers(self):
         log('info', self.peers)
+
+    def update_weights(self):
+        self.D = 0
+        for peer in self.peers:
+            w = peer["weight"]
+            name = peer["name"]
+            self.W[name] = w
+            self.D += w
 
     # Creates the TCP/IP server
     def _init_server(self):
@@ -187,7 +246,7 @@ class Node(threading.Thread):
                 return p
         return None
 
-    def _new_connection(self, peer, info):
+    def _connection(self, peer, info=None):
         log('info', f"{self.pname}: Establishing a connection with Node({peer.get('name')})...")
         try:
             # The node plays the role of a client
@@ -198,7 +257,6 @@ class Node(threading.Thread):
             # Create a communication thread and add it to nodesOut
             thread_client = NodeConnection(self, sock, peer, self.callback)
             thread_client.start()
-            self.nodesOut.append(thread_client)  # TODO remove
             upeer = next((p for p in self.peers if p["shost"] == peer['shost'] and p["sport"] == peer['sport']), {})
             if upeer:
                 upeer.update({'conn': thread_client, 'connected': True})
@@ -257,14 +315,21 @@ class Node(threading.Thread):
     def get_message_count_recv(self):
         return self.message_count_recv
 
-    def get_random_peer(self):
+    def get_random_peer(self, ignore_excluded=False):
         log('info', f"{self.pname}: Select a random peer")
-        peer = random.choice(self.peers)
-        if self.connect(peer) is not None:
-            time.sleep(0.1)  # wait for message exchange to take place
-            return peer
+        peers_list = []
+        if ignore_excluded:
+            for peer in self.peers:
+                if not next((e for e in self.excluded_peers if e["name"] == peer['name']), False):
+                    peers_list.append(peer)
         else:
-            return None
+            peers_list = self.peers
+        if len(peers_list) > 0:
+            peer = random.choice(peers_list)
+            if self.connect(peer) is not None:
+                time.sleep(0.1)  # wait for message exchange to take place
+                return peer
+        return None
 
     def wait_response(self, peer, mtype):
         # TODO use threading built it  wait functions
@@ -278,4 +343,4 @@ class Node(threading.Thread):
             except:
                 pass
 
-# ----------------------------------------------------------------------------------------------------------------------
+    # ----------------------------------------------------------------------------------------------------------------------

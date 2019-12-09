@@ -1,12 +1,13 @@
 import socket
 import time
+import random
 import pickle
 import threading
 import traceback
 
 from . import protocol
 from .helpers import log, unique_id, peer_id
-from .message import response_hello, response_model, request_exchange, response_exchange
+from .message import response_hello, exchange_model, request_subscribe, response_subscribe, response_information
 
 
 # Class NodeConnection
@@ -53,7 +54,7 @@ class NodeConnection(threading.Thread):
         self.sock.settimeout(10.0)
         # Send init message to exchange necessary nodes information in case of InNode
         if self.peer.get('ctype', '') == "In":
-            self.send(request_exchange(self.server))
+            self.send(request_subscribe(self.server))
 
         while not self.terminate_flag.is_set():
             try:
@@ -80,15 +81,19 @@ class NodeConnection(threading.Thread):
         if data is not None:
             try:
                 # requests ----------------------------------------
-                if data['mtype'] == protocol.REQUEST_EXCHANGE:
-                    self.do_exchange(data)
+                if data['mtype'] == protocol.REQUEST_SUBSCRIBE:
+                    self.do_subscribe(data)
+                elif data['mtype'] == protocol.REQUEST_INFORMATION:
+                    self.do_exchange_info(data, request=True)
                 elif data['mtype'] == protocol.REQUEST_HELLO:
                     self.do_hello(data)
-                elif data['mtype'] == protocol.REQUEST_MODEL:
-                    self.do_model(data)
+                elif data['mtype'] == protocol.EXCHANGE_MODEL:
+                    self.do_exchange_model(data)
                 # responses ---------------------------------------
-                elif data['mtype'] == protocol.RESPONSE_EXCHANGE:
+                elif data['mtype'] == protocol.RESPONSE_SUBSCRIBE:
                     self.update_info(data)
+                elif data['mtype'] == protocol.RESPONSE_INFORMATION:
+                    self.do_exchange_info(data, request=False)
                 elif data['mtype'] == protocol.RESPONSE_HELLO:
                     self.handle_response(protocol.RESPONSE_HELLO, data)
                 elif data['mtype'] == protocol.RESPONSE_MODEL:
@@ -97,8 +102,9 @@ class NodeConnection(threading.Thread):
                     log('error',
                         f"{self.server.pname}: NodeConnection: Message type ({data['mtype']}) is not supported")
                     return False
-            except:
-                log('error', f"{self.server.pname}: NodeConnection: Exception while processing message!")
+            except Exception as e:
+                log('error', f"{self.server.pname}: NodeConnection: Exception while processing message! {e}")
+                traceback.print_exc()
         else:
             log('error', f"{self.server.pname}: NodeConnection: Message empty!")
 
@@ -113,24 +119,61 @@ class NodeConnection(threading.Thread):
         message = response_hello(self.server)
         self.send(message)
 
-    def do_model(self, data):
-        message = response_model(self.server)
+    def do_exchange_model(self, data):
+        # update models list
+        self.server.update_models(data['sender']['name'], data['payload']['model'])
+        # Check if we still need to exchange models
+        update = self.server.check_exchange()
+        # Send back my model if neighbor's respond is true
+        if data['payload']['respond']:
+            self.send(exchange_model(self.server, respond=update))
+        else:
+            self.server.exclude_peer(self.peer)
+        # update while not stop condition
+        if update:
+            self.server.calculate_update(data)
+            if self.server.check_exchange():
+                # todo wait for a random time before performing the next iteration!
+                neighbor = self.server.get_random_peer(ignore_excluded=True)
+                exchange = exchange_model(self.server)
+                self.server.send(neighbor, exchange)
+
+    def do_subscribe(self, data):
+        message = response_subscribe(self.server)
         self.send(message)
 
-    def do_exchange(self, data):
-        message = response_exchange(self.server)
-        self.send(message)
+    def do_exchange_info(self, data, request=False):
+        # Send back information if its a request message
+        if request:
+            message = response_information(self.server)
+            self.send(message)
+        # Update neighbor information
+        s = data['sender']
+        upeer = next((p for p in self.server.peers if p["shost"] == s['shost'] and p["sport"] == s['sport']), {})
+        if upeer:
+            upeer.update({'data_size': data['payload']['data_size']})
+            self.peer = upeer
+            try:
+                self.server.c = len(self.server.ldata) / max(peer.get("data_size", 0) for peer in self.server.peers)
+            except ZeroDivisionError:
+                log('exception', f"{self.server.pname}: Max data sizes equal to zero")
+                self.server.c = 1
 
     def update_info(self, data):
         s = data['sender']
         upeer = next((p for p in self.server.peers if p["shost"] == s['shost'] and p["sport"] == s['sport']), {})
         if upeer:
-            upeer.update({'name': s['name'], 'shost': s['shost'], 'sport': s['sport'], 'conn': self, 'connected': True})
+            upeer.update({'name': s['name'], 'shost': s['shost'], 'sport': s['sport'], 'ctype': "In", 'conn': self,
+                          'connected': True})
             self.peer = upeer
         else:
-            s.update({'chost': self.host, 'cport': self.port, 'conn': self, 'connected': True})
+            rw = random.uniform(0, 1)
+            s.update(
+                {'chost': self.host, 'cport': self.port, 'ctype': "In", 'weight': rw, 'conn': self, 'connected': True}
+            )
             self.server.peers.append(s)
             self.peer = s
+            self.server.update_weights()
 
     def handle_response(self, mtype, data):
         pid = peer_id(self.peer)

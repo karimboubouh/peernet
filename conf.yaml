@@ -2,14 +2,30 @@
 # Each worker is running on a seperate core
 ---
 - nodes:
-  - {name: w1, host: localhost, port: 45000}
-  - {name: w2, host: localhost, port: 45001}
-  - {name: w3, host: localhost, port: 45002}
-  - {name: w4, host: localhost, port: 45003}
-  - {name: w5, host: localhost, port: 45004}
-  - {name: w6, host: localhost, port: 45005}
-  - {name: w7, host: localhost, port: 45006}
-  - {name: w8, host: localhost, port: 45007}
+    - {name: w1, host: localhost, port: 45000}
+    - {name: w2, host: localhost, port: 45001}
+    - {name: w3, host: localhost, port: 45002}
+    - {name: w4, host: localhost, port: 45003}
+    - {name: w5, host: localhost, port: 45004}
+    - {name: w6, host: localhost, port: 45005}
+    - {name: w7, host: localhost, port: 45006}
+    - {name: w8, host: localhost, port: 45007}
+#    - {name: w9, host: localhost, port: 45008}
+#    - {name: w10, host: localhost, port: 45009}
+#    - {name: w11, host: localhost, port: 45010}
+#    - {name: w12, host: localhost, port: 45011}
+
+# Learning rate
+- lr: 0.01
+
+# Number of iterations
+- epoches: 10
+
+# Shuffle the data:
+- shuffle: True
+
+# Fix a random state
+- random_state: None
 
 # The probability of initiating a fetch parameter request
 - fetch_probability: 1

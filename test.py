@@ -1,4 +1,5 @@
 import random
+import numpy as np
 
 
 def hello(kwargs):
@@ -56,11 +57,78 @@ peer = random.choice(a)
 # print(x)
 
 
-peers = [{'A': 1, 'B': 3, 'C': 11}, {'A': 2, 'B': 6, 'C': 22}, {'A': 1, 'B': 7, 'C': 33}, {'A': 4, 'B': 8, 'C': 44}]
+# peers = [{'A': 1, 'B': 3, 'C': 11}, {'A': 2, 'B': 6, 'C': 22}, {'A': 1, 'B': 7, 'C': 33}, {'A': 4, 'B': 8, 'C': 44}]
+#
+# x = next((p for p in peers if p["A"] == 1 and p["B"] == 7), False)
+# if x:
+#     x.update({'C': 123, 'D': "Hello"})
+# else:
+#     peers.append({})
+# print(x)
 
-x = next((p for p in peers if p["A"] == 1 and p["B"] == 7), False)
-if x:
-    x.update({'C': 123, 'D': "Hello"})
-else:
-    peers.append({})
-print(x)
+# from sklearn.datasets import load_breast_cancer
+#
+# data = load_breast_cancer()
+#
+# # Organize our data
+# label_names = data['target_names']
+# labels = data['target']
+# feature_names = data['feature_names']
+# features = data['data']
+# print(len(features))
+
+
+nodeCount = 4
+maxVertices = nodeCount * (nodeCount - 1) / 2 + 1
+vertexCount = np.random.randint(1, maxVertices)
+
+vertices = {}
+while len(vertices) < vertexCount:
+    x = random.randint(1, nodeCount)
+    y = random.randint(1, nodeCount)
+    if x == y:
+        continue
+    # comment the following line if the graph is directed
+    if y < x: x, y = y, x
+    w = random.random()
+    vertices[x, y] = w
+
+
+# just for debug
+# for (x, y), w in vertices.items():
+#     print('Vertex from {} to {} with weight {}.'.format(x, y, w))
+
+# N = 4
+# a = np.random.randint(0, 2, (N, N))
+# m = np.tril(a) + np.tril(a, -1).T
+# np.fill_diagonal(m, 0)
+#
+# print(m)
+
+
+class C(object):
+    def __init__(self):
+        self._x = 0
+
+    @property
+    def parameters(self):
+        print('getting')
+        return self._x
+
+    @parameters.setter
+    def parameters(self, value):
+        print("setter")
+        self._x = value
+
+
+if __name__ == '__main__':
+    c = C()
+    # print(c.parameters)
+    c.parameters = 10
+    # print(c.parameters)
+
+n = 7
+for j in range(1, n):
+    for i in range(1, n):
+        if i < j:
+            print(f"W({i}, {j})")
