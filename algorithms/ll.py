@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 import h5py
 
@@ -276,8 +277,26 @@ def analysis(model, X_train, y_train, X_test, y_test):
 
 if __name__ == '__main__':
     # Load dataset
-    dataset = 2
+    dataset = 1
     if dataset == 1:
+        dataset = pd.read_csv('../data/breast_cancer.csv')
+        dataset = dataset.iloc[:, 1:32]
+        X = dataset.iloc[:, 1:31].values
+        Y = dataset.iloc[:, 0].values
+        Y = np.where(Y == 'M', 0, 1)
+        X_train, X_test, y_train, y_test = train_test_split(X, Y, test_size=0.20, random_state=0)
+        # model = LogisticRegression().fit(X_train, y_train)
+        # print(f"Logistic regression training set classification score: {format(model.score(X_train, y_train), '.4f')} ")
+        # print(f"Logistic regression testing set classification score: {format(model.score(X_test, y_test), '.4f')} ")
+        # exit(0)
+        X_train = X_train.reshape(X_train.shape[0], -1).T
+        X_test = X_test.reshape(X_test.shape[0], -1).T
+        # Train model
+        model = LogisticRegressionNN(debug=True)
+        model.fit(X_train, y_train)
+        accuracy = model.metrics(X_test, y_test)
+        print(f"Accuracy: {round(accuracy, 2)}%.")
+    elif dataset == 2:
         X, y, X_test, y_test, classes = load_dataset()
         # Reshape the training and test examples
         X_flatten = X.reshape(X.shape[0], -1).T
@@ -288,14 +307,14 @@ if __name__ == '__main__':
         # Train model
         model = LogisticRegressionNN()
         model.fit(X, y)
-        model.metrics(X_test, y_test)
+        print(model.metrics(X_test, y_test))
         index = 17
         pic = X_test[:, index]
         pic_y = y_test[0, index]
         pred = model.predict_one(pic)
         print(f"You predicted {classes[int(pic_y)].decode('utf-8')} as: {classes[int(pred)].decode('utf-8')}")
         analysis(LogisticRegressionNN, X, y, X_test, y_test)
-    elif dataset == 2:
+    elif dataset == 3:
         df = pd.read_csv('../data/sonar.csv')
         X = df.iloc[:, :-1].values
         y = df.iloc[:, 60].values

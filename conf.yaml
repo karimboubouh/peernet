@@ -14,6 +14,15 @@
 #    - {name: w10, host: localhost, port: 45009}
 #    - {name: w11, host: localhost, port: 45010}
 #    - {name: w12, host: localhost, port: 45011}
+- arch:
+    - 'w1': {'w2': 3, 'w4': 2}
+    - 'w2': {'w1': 3, 'w5': 1, 'w7': 1}
+    - 'w3': {'w5': 4}
+    - 'w4': {'w1': 2, 'w7': 2}
+    - 'w5': {'w2': 1, 'w3': 4, 'w6': 2}
+    - 'w6': {'w5': 2, 'w7': 3}
+    - 'w7': {'w2': 1, 'w4': 2, 'w6': 3, 'w8': 4}
+    - 'w8': {'w7': 4}
 
 # Learning rate
 - lr: 0.01

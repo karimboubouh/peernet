@@ -127,3 +127,10 @@ data/
 iko/
 .idea/
 test.py
+Trash
+data/
+save/
+rest/
+datasets/mnist.data
+datasets/
+playground/

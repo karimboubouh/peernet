@@ -1,3 +1,4 @@
+import copy
 import random
 import socket
 import time
@@ -7,15 +8,21 @@ from typing import List
 
 import numpy as np
 
+from . import protocol
+from .constants import M_CONSTANT
+from .message import exchange_variables
 from .protocol import *
 from .node_connection import NodeConnection
-from .helpers import log, bold, unique_id, create_tcp_socket, peer_id
+from .helpers import log, bold, unique_id, create_tcp_socket, peer_id, _p
+from .updates import mp_update, cl_update_primal, cl_update_secondary, cl_update_dual
 
 
 # Class Node
 # Implements a node that is able to connect to other nodes and is able to accept connections from other nodes.
 # After instantiation, the node creates a TCP/IP server with the given port.
 #
+
+
 class Node(threading.Thread):
 
     # Node class constructor
@@ -25,6 +32,10 @@ class Node(threading.Thread):
         self.id = unique_id(10)
         self.name = node_config['name']
         self.ldata = {}
+        self.X = None
+        self.y = None
+        self.X_test = None
+        self.y_test = None
         # Server details
         self.host = node_config['host']
         self.port = node_config['port']
@@ -33,11 +44,18 @@ class Node(threading.Thread):
         self.solitary_model = None
         self.model = None
         self.models = {}
+        self.costs = []
         self.W = {}
         self.D = 0.0  # represent the value Dii
-        self.c = 1  # Confidence values
-        self.alpha = 0.5
-        self.stop_condition = 10
+        self.c = 1 + M_CONSTANT  # Confidence values
+        self.alpha = 0.9
+        # CL
+        self.Theta = {}
+        self.Z = {}
+        self.A = {}
+        self.rho = 1
+        self.mu = 0.5
+        self.stop_condition = None
         # Implementation details
         self.excluded_peers = []
         self.lock = threading.RLock()
@@ -59,6 +77,9 @@ class Node(threading.Thread):
         # statistical attributes
         self.message_count_send = 0
         self.message_count_recv = 0
+        self.accuracy = 0
+        random.seed(100)
+        np.random.seed(100)
 
     def __str__(self):
         return f"Node({self.name})"  # can be more readable
@@ -79,11 +100,13 @@ class Node(threading.Thread):
                 log('info', f"{self.pname}: Waiting for incoming connections ...")
                 conn, add = self.sock.accept()
                 tmp_peer = {'name': add[1], 'chost': add[0], 'cport': add[1], 'ctype': "In"}
-                thread_client = NodeConnection(self, conn, tmp_peer, self.callback)
-                thread_client.start()
-                self.nodesIn.append(thread_client)  # TODO Remove
-                # self._set_peer_node(client_peer, thread_client) # TODO Remove
-                self.event_node_connected(tmp_peer, thread_client)
+                if not self.terminate_flag.is_set():
+                    thread_client = NodeConnection(self, conn, tmp_peer, self.callback)
+                    thread_client.start()
+                    self.nodesIn.append(thread_client)  # TODO Remove
+                    # self._set_peer_node(client_peer, thread_client) # TODO Remove
+                    self.event_node_connected(tmp_peer, thread_client)
+
             except socket.timeout as e:
                 log('exception', f"{self.pname}: Socket timeout!\n{e}")
             except Exception as e:
@@ -108,6 +131,7 @@ class Node(threading.Thread):
     # Stop the thread
     def stop(self):
         self.terminate_flag.set()
+        socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect((self.host, self.port))
 
     # Connect node with its neighbors
     def connect_neighbors(self):
@@ -141,7 +165,7 @@ class Node(threading.Thread):
 
     # Send a message to a node.
     def send(self, peer, message):
-        self._clean_peers()
+        # self._clean_peers()
         if self._is_peer_ready(peer):
             try:
                 peer['conn'].send(message)
@@ -172,18 +196,49 @@ class Node(threading.Thread):
         else:
             raise Exception(f"Wrong type for argument 'include': ({type(include)})!")
 
-    # Calculate model updates over network
-    def calculate_update(self, data):
-        with self.lock:
-            self.stop_condition -= 1
-            sigma = np.zeros((self.model.parameters.shape[0], 1))
-            for name, model in self.models.items():
-                sigma += self.W[name] / self.D * model.parameters
-            log("success", f"{self.pname}: Model to be updated {sum(self.model.parameters)}")
+    # MP::Calculate model updates over network
+    def mp_calculate_update(self, data):
 
-            self.model.parameters = (self.alpha + (1 - self.alpha) * self.c) ** -1 * (
-                    self.alpha * sigma + (1 - self.alpha) * self.c * self.solitary_model.parameters)
-            log("success", f"{self.pname}: Model updated {sum(self.model.parameters)}")
+        with self.lock:
+            if self.check_exchange():
+                self.stop_condition -= 1
+                # alpha_bar = (1 - self.alpha)
+                # # update W -----------------------------------------------------------------
+                # sigma = np.zeros((self.model.W.shape[0], 1))
+                # for name, model in self.models.copy().items():
+                #     sigma += (self.W[name] / self.D) * model.W
+                #
+                # self.model.W = (self.alpha + alpha_bar * self.c) ** -1 * (
+                #         self.alpha * sigma + alpha_bar * self.c * self.solitary_model.W)
+                # # update b -----------------------------------------------------------------
+                # sigma = np.zeros((self.model.b.shape[0], 1))
+                # for name, model in self.models.copy().items():
+                #     sigma += (self.W[name] / self.D) * model.b
+                #
+                # self.model.b = (self.alpha + alpha_bar * self.c) ** -1 * (
+                #         self.alpha * sigma + alpha_bar * self.c * self.solitary_model.b)
+                #
+                # if self.stop_condition % 10 == 0:
+                #     self.costs.append(self.model.test_accuracy(self.X_test, self.y_test))
+                if self.model is not None:
+                    model = copy.deepcopy(self.model)
+                    # Perform model propagation updates
+                    mp_update(self, parameter="W")
+                    mp_update(self, parameter="b")
+                    # print(f"{self.pname} >> COST::::: {self.model.test_accuracy(self.X_test, self.y_test)}")
+                    if self.model is None:
+                        self.model = model
+                    # if self.stop_condition % 10 == 0:
+                    self.costs.append(self.model.test_cost(self.X_test, self.y_test))
+
+    # CL::Calculate primal variables (minimize arg min L(models, Z, A)).
+    def update_primal(self, neighbor, respond=True):
+        # update primal variables if SC > 0
+        cl_update_primal(self, neighbor)
+        # exchange variables with neighbor
+        if respond:
+            update = self.check_exchange()
+            self.send(neighbor, exchange_variables(self, neighbor, respond=update))
 
     def get_model(self):
         return self.model
@@ -300,7 +355,8 @@ class Node(threading.Thread):
             self.callback(NODE_CONNECTED, self, thread_client, {})
 
     def event_node_message(self, node, data):
-        log('event', f"Event Message: Node({node.name}) received ({data['mtype']} from Node({data['sender']['name']}).")
+        log('event',
+            f"Event Message: Node({node.name}) received ({_p(data['mtype'])} from Node({data['sender']['name']}).")
         if self.callback is not None:
             self.callback(NODE_MESSAGE, self, node, data)
 
@@ -325,10 +381,11 @@ class Node(threading.Thread):
         else:
             peers_list = self.peers
         if len(peers_list) > 0:
+            # random.seed(self.stop_condition)
             peer = random.choice(peers_list)
             if self.connect(peer) is not None:
                 time.sleep(0.1)  # wait for message exchange to take place
-                return peer
+            return peer
         return None
 
     def wait_response(self, peer, mtype):

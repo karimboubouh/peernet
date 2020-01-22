@@ -27,7 +27,7 @@ class Perceptron(object):
         Number of misclassifications (updates) in each epoch.
     """
 
-    def __init__(self, eta=0.01, n_iter=10, shuffle=True, random_state=None):
+    def __init__(self, eta=0.01, n_iter=1000, shuffle=False, random_state=None):
         self.eta = eta
         self.n_iter = n_iter
         self.shuffle = shuffle
@@ -57,22 +57,25 @@ class Perceptron(object):
         if self.w_ is None:
             self.w_ = np.zeros(1 + X.shape[1])
 
-        for _ in range(self.n_iter):
+        for i in range(self.n_iter):
             if self.shuffle:
                 X, y = self._shuffle(X, y)
             errors = 0
             for xi, target in zip(X, y):
                 update = self.eta * (target - self.predict(xi))
-                print('---------> ', self.w_[1:], update, xi, update * xi)
                 self.w_[1:] += update * xi
-                print('---------+ ', self.w_[1:])
                 # self.w_[0] += update
                 errors += int(update != 0.0)
                 # errors += update
                 # print(f"Xi={xi}, y={target}, prediction={self.predict(xi)}, update={update}, ERRORS={errors}")
             self.errors_.append(errors)
-            print(self.w_)
-            print("--------------------")
+            if i % 100 == 0:
+                print("Cost after %i iterations: %f" % (i, errors))
+
+        y_pred = self.predict(X)
+        print(f"Train Accuracy: {metrics.accuracy_score(y, y_pred)}")
+
+
         return self
 
     def predict(self, X):
@@ -87,9 +90,9 @@ class Perceptron(object):
         elif type == 'confusion_matrix':
             return f"Confusion Matrix: {metrics.confusion_matrix(y_test, y_pred)}"
         elif type == 'accuracy':
-            return f"Accuracy: {metrics.accuracy_score(y_test, y_pred)}"
+            return f"Test Accuracy: {metrics.accuracy_score(y_test, y_pred)}"
         else:
-            return f"Accuracy: {metrics.accuracy_score(y_test, y_pred)}"
+            return f"Test  Accuracy: {metrics.accuracy_score(y_test, y_pred)}"
 
     def plot_errors(self):
         """Plot the number of updates across epochs."""
@@ -173,7 +176,7 @@ if __name__ == '__main__':
     # Breast cancer dataset
     df = pd.read_csv('../data/breast_cancer.csv')
     df.drop(df.columns[[-1, 0]], axis=1, inplace=True)
-    featureMeans = list(df.columns[1:4])
+    featureMeans = list(df.columns[1:12])  # ['radius_mean', 'texture_mean', 'perimeter_mean']
     df.diagnosis = df.diagnosis.map({'M': -1, 'B': 1})
     X = df.loc[:, featureMeans].values
     y = df.loc[:, 'diagnosis'].values
@@ -184,11 +187,11 @@ if __name__ == '__main__':
     # plt.figure(figsize=(10, 10))
     # sns.heatmap(df[featureMeans].corr(), annot=True, square=True, cmap='coolwarm')
     # plt.show()
-
+    np.random.seed(1)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20)
 
     # Training the perceptron model and show its metrics
-    ppn1 = Perceptron(eta=0.01, n_iter=10, random_state=0)
+    ppn1 = Perceptron(eta=0.01, n_iter=1000, random_state=2)
     ppn1.fit(X_train, y_train)
     print(ppn1.metrics(X_test, y_test))
     # print("----------------------------------")

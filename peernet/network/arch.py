@@ -1,6 +1,7 @@
 from typing import List
 import numpy as np
 from ..node import Node
+from ..constants import NETWORK_SEED
 
 
 def full_network(nodes: List[Node]):
@@ -15,9 +16,42 @@ def full_network(nodes: List[Node]):
                     }]
 
 
+def get_node(nodes, name):
+    for node in nodes:
+        if node.name == name:
+            return node
+
+
+def static_network(nodes: List[Node]):
+    # A network with 8 nodes
+    if len(nodes) != 8:
+        raise Exception("Static network!")
+
+    arch = {
+        'w1': {'w2': 3, 'w4': 2},
+        'w2': {'w1': 3, 'w5': 1, 'w7': 1},
+        'w3': {'w5': 4},
+        'w4': {'w1': 2, 'w7': 2},
+        'w5': {'w2': 1, 'w3': 4, 'w6': 2},
+        'w6': {'w5': 2, 'w7': 3},
+        'w7': {'w2': 1, 'w4': 2, 'w6': 3, 'w8': 4},
+        'w8': {'w7': 4},
+    }
+
+    for name, peers in arch.items():
+        node = get_node(nodes, name)
+        for peer, weight in peers.items():
+            n = get_node(nodes, peer)
+            node.peers += [
+                {
+                    'name': f"{n.name}", 'shost': n.host, 'sport': n.port, 'chost': n.host, 'cport': n.port,
+                    'ctype': "Out", 'weight': weight, 'conn': None, 'connected': False
+                }]
+
+
 def random_network(nodes: List[Node]):
     nodes_size = len(nodes)
-
+    np.random.seed(NETWORK_SEED)
     for node in nodes:
 
         number_neighbors = 0

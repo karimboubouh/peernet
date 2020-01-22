@@ -1,4 +1,5 @@
 from . import protocol
+from .helpers import data_size
 
 
 def request_subscribe(node):
@@ -20,7 +21,7 @@ def request_information(node):
         'mtype': protocol.REQUEST_INFORMATION,
         'sender': {'name': node.name, 'shost': node.host, 'sport': node.port},
         'status': protocol.NO_ERROR,
-        'payload': {'data_size': len(node.ldata)}
+        'payload': {'data_size': data_size(node)}
     }
 
 
@@ -29,7 +30,7 @@ def response_information(node):
         'mtype': protocol.RESPONSE_INFORMATION,
         'sender': {'name': node.name, 'shost': node.host, 'sport': node.port},
         'status': protocol.NO_ERROR,
-        'payload': {'data_size': len(node.ldata)}
+        'payload': {'data_size': data_size(node)}
     }
 
 
@@ -42,6 +43,31 @@ def exchange_model(node, respond=True):
     }
 
 
+def exchange_sol_model(node):
+    return {
+        'mtype': protocol.EXCHANGE_SOL_MODEL,
+        'sender': {'name': node.name, 'shost': node.host, 'sport': node.port},
+        'status': protocol.NO_ERROR,
+        'payload': {'model': node.solitary_model}
+    }
+
+
+def exchange_variables(node, neighbor, respond=True):
+    name = neighbor['name']
+    return {
+        'mtype': protocol.EXCHANGE_VARIABLES,
+        'sender': {'name': node.name, 'shost': node.host, 'sport': node.port},
+        'status': protocol.NO_ERROR,
+        'payload': {
+            'model_i': node.Theta[node.name],
+            'model_j': node.Theta[node.name],
+            'A_i': node.A[node.name],
+            'A_j': node.A[name],
+            'respond': respond
+        }
+    }
+
+
 # Request messages ------------------------------------------------------------
 
 def request_exchange(node):
@@ -49,7 +75,7 @@ def request_exchange(node):
         'mtype': protocol.REQUEST_EXCHANGE,
         'sender': {'name': node.name, 'shost': node.host, 'sport': node.port},
         'status': protocol.NO_ERROR,
-        'payload': {'data_size': len(node.ldata)}
+        'payload': {'data_size': data_size(node)}
     }
 
 
@@ -78,7 +104,7 @@ def response_exchange(node):
         'mtype': protocol.RESPONSE_EXCHANGE,
         'sender': {'name': node.name, 'shost': node.host, 'sport': node.port},
         'status': protocol.NO_ERROR,
-        'payload': {'data_size': len(node.ldata)}
+        'payload': {'data_size': data_size(node)}
     }
 
 

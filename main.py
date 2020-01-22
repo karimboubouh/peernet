@@ -1,52 +1,72 @@
-import numpy as np
-from sklearn.model_selection import train_test_split
-
-from algorithms.hello import hello
-from peernet.PeerNet import PeerNet
-from peernet.network.arch import random_network
-from algorithms.logistic_regression import LogisticRegressionNN
-
-
-def pre_processing(df):
-    """Data pre-processing function"""
-
-    X = df.iloc[:, :-1].values
-    y = df.iloc[:, 60].values
-    y = np.where(y == 'R', 0, 1)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20)
-    X_train = X_train.reshape(X_train.shape[0], -1).T
-    X_test = X_test.reshape(X_test.shape[0], -1).T
-
-    return X_train, X_test, y_train, y_test
+from algorithms.SoftMaxRegression import SoftMaxRegression
+from peernet.helpers import bold
+from peernet.network.arch import random_network, static_network
+from algorithms.LogisticRegression import LogisticRegression
+import expirements
+from lib.graph.generator.erdos_renyi import ErdosRenyi
+from pre_processing import load_banknotes, load_mnist_12, load_mnist
 
 
-def main():
-    p2p = PeerNet("conf.yaml")
+def model_propagation():
+    iterations = {'type': "iterations", 'iterations': (0, 50, 1)}
+    unbalancedness = {'type': "unbalancedness", "SC": 20}
+    sparsity = {'type': "sparsity", "SC": 10}
+    communication = {'type': "communication", "SC": 100}
 
-    # Setup the P2P network and the communication between neighbors
-    p2p.network(random_network).init()
+    # for i in range(55, 105, 5):
+    mnist_12__mp = {
+        "model": LogisticRegression,
+        "config": (10, 40000),  # number of clients
+        "network": ErdosRenyi,
+        "dataset": ["mnist.data", True, 0, ';', load_mnist_12],
+        "confidence": True,
+        "analysis": sparsity
+    }
+    # Experiment MP x Iterations analysis
+    # expirements.experiment_mp_iter(**mnist_12__mp)
+    # expirements.experiment_mp_unbalancedness(**mnist_12__mp)
+    # expirements.experiment_mp_data(**mnist_12__mp)
+    expirements.experiment_mp_graph_sparsity(**mnist_12__mp)
+    # expirements.experiment_mp_communication(**mnist_12__mp)
 
-    # Load and randomly distribute training samples between nodes
-    p2p.load_dataset("./data/sonar.csv", df=True, min_samples=0)
 
-    # Train the model using one of the approaches: "MP", "CL" or "LL"
-    p2p.train(
-        model=LogisticRegressionNN,
-        pre=pre_processing,
-        algorithm="MP",
-        params={"K": 5}
-    )
+def collaborative_learning():
+    iterations = {'type': "iterations", 'iterations': (0, 10, 1)}
+    empty = {'type': None}
 
-    # Show information about the nodes
-    p2p.info()
+    mnist_12__mp = {
+        "model": LogisticRegression,
+        "config": (10, 40000),
+        "network": random_network,
+        "dataset": ["mnist.data", True, 0, ';', load_mnist_12],
+        "analysis": iterations
+    }
+
+    # Experiment
+    expirements.experiment_cl_iter(**mnist_12__mp)
 
 
-main()
+def local_learning():
+    mnist_12__mp = {
+        "model": LogisticRegression,
+        "config": (10, 40000),
+        "network": random_network,
+        "dataset": ["mnist.data", True, 0, ';', load_mnist],
+        "confidence": True,
+        "analysis": {'type': "none"}
+    }
 
-# ---- Tasks
-# TODO Select random peers with probability π_j if Agent_j \in Neighbors
-# # TODO Define a static model for analysis
-# # TODO (plus some small constant in the case where mi = 0).
-# # TODO where µ > 0 is a trade-off parameter
-# ---- Remarks
-# R1: With t -> infinity: the algorithm converge to optimal model
+    # Experiment MP x Iterations analysis
+    expirements.experiment_ll(**mnist_12__mp)
+
+
+if __name__ == '__main__':
+    print(bold('Starting simulation ...'))
+    model_propagation()
+    # collaborative_learning()
+    # local_learning()
+    print(bold('Done ...'))
+
+# OPENBLAS_NUM_THREADS=1
+# GOTO_NUM_THREADS=1
+# OMP_NUM_THREADS=1
