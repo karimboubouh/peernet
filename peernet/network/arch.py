@@ -51,7 +51,7 @@ def static_network(nodes: List[Node]):
 
 def random_network(nodes: List[Node]):
     nodes_size = len(nodes)
-    np.random.seed(NETWORK_SEED)
+    # np.random.seed(NETWORK_SEED)
     for node in nodes:
 
         number_neighbors = 0

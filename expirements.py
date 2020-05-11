@@ -43,7 +43,7 @@ def experiment_mp_iter(model, config, network, dataset, confidence, analysis):
     x = range(iterations[0], iterations[1] + 1, iterations[2])
     y = p2p.results
     # print(y)
-    save(f"./results/mp_iterations_{confidence}", (x, y))
+    save(f"OLD_results/mp_iterations_{confidence}", (x, y))
     labels = {'x': "Iterations", 'y': "Cost", 'title': "Iterations X Cost"}
     # plots.iterations(x, y, labels)
     # ddd
@@ -63,7 +63,7 @@ def experiment_mp_iter(model, config, network, dataset, confidence, analysis):
     x = range(iterations[0], iterations[1] + 1, iterations[2])
     y = p2p.results
     # print(y)
-    save(f"./results/mp_iterations_{not confidence}", (x, y))
+    save(f"OLD_results/mp_iterations_{not confidence}", (x, y))
     labels = {'x': "Iterations", 'y': "Cost", 'title': "Iterations X Cost"}
     # plots.iterations(x, y, labels)
 
@@ -110,7 +110,7 @@ def experiment_mp_unbalancedness(model, config, network, dataset, confidence, an
     # Plotting
     x = np.arange(0, 1 + sharedVars.EPSILON_STEP, sharedVars.EPSILON_STEP)
     y = p2p.results
-    save(f"./results/mp_epsilon_{analysis['SC']}_{confidence}", (x, y))
+    save(f"OLD_results/mp_epsilon_{analysis['SC']}_{confidence}", (x, y))
 
     # Train the model using one of the approaches: "MP", "CL" or "LL"
     sharedVars.STOP_CONDITION = analysis['SC']
@@ -138,7 +138,7 @@ def experiment_mp_unbalancedness(model, config, network, dataset, confidence, an
     # Plotting
     x = np.arange(0, 1 + sharedVars.EPSILON_STEP, sharedVars.EPSILON_STEP)
     y = p2p.results
-    save(f"./results/mp_epsilon_{analysis['SC']}_{not confidence}", (x, y))
+    save(f"OLD_results/mp_epsilon_{analysis['SC']}_{not confidence}", (x, y))
     # plots
     fileA = f"./results/mp_epsilon_{analysis['SC']}_{confidence}"
     fileB = f"./results/mp_epsilon_{analysis['SC']}_{not confidence}"
@@ -217,7 +217,7 @@ def experiment_mp_graph_sparsity(model, config, network, dataset, confidence, an
     y1 = results
     print(y1)
 
-    save(f"./results/mp_sparsity_{analysis['SC']}_{confidence}", (x, y1))
+    save(f"OLD_results/mp_sparsity_{analysis['SC']}_{confidence}", (x, y1))
     # labels = {'x': "Graph Sparsity", 'y': "Cost", 'title': "Graph Sparsity X Cost"}
     # plots.iterations(x, y1, labels)
 
@@ -274,7 +274,7 @@ def experiment_cl_iter(model, config, network, dataset, analysis):
     print(x)
     print("Y:")
     print(y)
-    save(f"./results/cl_iterations_iter_{iterations[1]}", (x, y))
+    save(f"OLD_results/cl_iterations_iter_{iterations[1]}", (x, y))
     labels = {'x': "Iterations", 'y': "Cost", 'title': "Iterations X Cost"}
     plots.iterations(x, y, labels)
 

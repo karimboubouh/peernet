@@ -1,5 +1,6 @@
 import numpy as np
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 
 
 def sonar(df):
@@ -83,27 +84,14 @@ def load_mnist_12(data):
     return x_train, x_test, y_train, y_test
 
 
-def load_mnist(data):
-    x_train = data['x_train'].values
-    y_train = data['y_train'].values
-    x_test = data['x_test'].values
-    y_test = data['y_test'].values
+def pre_mnist(data):
+    x_train, y_train, x_test, y_test = data
 
-    # Normalize data
+    # # Normalization
     x_train = x_train / 255
     x_test = x_test / 255
 
-    x_train, x_test = x_train.T, x_test.T
-    # one-hot encode labels
-    digits = 10
-    examples = y_train.shape[0]
-    y_train = y_train.reshape(1, examples)
-    y_train_new = np.eye(digits)[y_train.astype('int32')]
-    y_train = y_train_new.T.reshape(digits, examples)
+    y_train = y_train.ravel()
+    y_test = y_test.ravel()
 
-    examples = y_test.shape[0]
-    y_test = y_test.reshape(1, examples)
-    y_test_new = np.eye(digits)[y_test.astype('int32')]
-    y_test = y_test_new.T.reshape(digits, examples)
-
-    return x_train, x_test, y_train, y_test
+    return x_train, y_train, x_test, y_test

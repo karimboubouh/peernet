@@ -131,6 +131,7 @@ Trash
 data/
 save/
 rest/
+datasets/*
 datasets/mnist.data
 datasets/
 playground/

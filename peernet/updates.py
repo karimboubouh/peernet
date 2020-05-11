@@ -1,12 +1,83 @@
-import time
 import traceback
-
 import numpy as np
-
+from .constants import CONFIDENCE_MEASURE
 from .helpers import log
 
 
 def mp_update(node, parameter="W"):
+    """Calculate model propagation update."""
+    try:
+        theta = node.model.weights
+        theta_sol = node.solitary_model.weights
+        sigma = np.zeros(theta.shape)
+
+        for name, model in node.models.copy().items():
+            theta_k = model.weights
+            sigma += (node.W[name] / node.D) * theta_k
+
+        log("info", f"{node.pname}: Model to be updated (Parameter: {parameter}) {np.sum(theta)}")
+
+        alpha_bar = (1 - node.alpha)
+        update = (node.alpha + alpha_bar * node.c) ** -1 * (node.alpha * sigma + alpha_bar * node.c * theta_sol)
+
+        log("info", f"{node.pname}: Model updated (Parameter: {parameter}) {np.sum(update)}")
+
+        if update is None:
+            print(f"{node.pname} : update={theta_sol}")
+            return
+        else:
+            assert (theta.shape == update.shape)
+            node.model.weights = update
+            # print(".", end="")
+    except AttributeError as e:
+        traceback.print_exc()
+        return
+    except TypeError as e:
+        return
+
+
+def cmp_update(node, parameter="W"):
+    """Calculate controlled model propagation update."""
+    try:
+        theta = node.model.weights
+        theta_sol = node.solitary_model.weights
+        sigma = np.zeros(theta.shape)
+        if node.use_cf:
+            if CONFIDENCE_MEASURE == 'max':
+                c = 1 / np.max(list(node.cf.values()))
+            else:
+                c = 1 / np.mean(list(node.cf.values()))
+        else:
+            c = 1
+
+        for name, model in node.models.copy().items():
+            if name != "w7":
+                theta_k = model.weights
+                sigma += (node.W[name] / node.D) * theta_k
+
+        log("info", f"{node.pname}: Model to be updated (Parameter: {parameter}) {np.sum(theta)}")
+
+        alpha_bar = (1 - node.alpha)
+        update = (node.alpha + alpha_bar * c) ** -1 * (node.alpha * sigma + alpha_bar * c * theta_sol)
+
+        log("info", f"{node.pname}: Model updated (Parameter: {parameter}) {np.sum(update)}")
+
+        if update is None:
+            print(f"{node.pname} : update={theta_sol}")
+            return
+        else:
+            assert (theta.shape == update.shape)
+            node.model.weights = update
+            # print(".", end="")
+    except AttributeError as e:
+        traceback.print_exc()
+        return
+    except TypeError as e:
+        traceback.print_exc()
+        return
+
+
+def mp_update2(node, parameter="W"):
     """Calculate model propagation update."""
     try:
         theta = getattr(node.model, parameter, None)
@@ -21,12 +92,12 @@ def mp_update(node, parameter="W"):
             theta_k = getattr(model, parameter)
             sigma += (node.W[name] / node.D) * theta_k
 
-        log("success", f"{node.pname}: Model to be updated (Parameter: {parameter}) {sum(theta)}")
+        log("info", f"{node.pname}: Model to be updated (Parameter: {parameter}) {sum(theta)}")
 
         alpha_bar = (1 - node.alpha)
         update = (node.alpha + alpha_bar * node.c) ** -1 * (node.alpha * sigma + alpha_bar * node.c * theta_sol)
 
-        log("success", f"{node.pname}: Model updated (Parameter: {parameter}) {sum(update)}")
+        log("info", f"{node.pname}: Model updated (Parameter: {parameter}) {sum(update)}")
 
         if update is None:
             print(f"{node.pname} : update={theta_sol}")

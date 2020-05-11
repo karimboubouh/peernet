@@ -8,7 +8,8 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 from scipy import stats
-from peernet.helpers import load
+from peernet.helpers import load, save
+from scipy.interpolate import make_interp_spline, BSpline
 
 
 def data_distribution(nodes):
@@ -50,6 +51,114 @@ def file_mp_iter(fileA, fileB, info):
     plt.ylabel(info['ylabel'])
     plt.xlabel(info['xlabel'])
     plt.legend(loc='upper right', shadow=True)
+    plt.show()
+
+
+def communication_rounds(N, C, F, ylabel="Accuracy", xlabel="Communication rounds"):
+    xN, yN = load(N)
+    xC, yC = load(C)
+    xF, yF = load(F)
+    plt.figure()
+    plt.plot(xN, np.squeeze(yN), label=f"MP without confidence")
+    plt.plot(xC, np.squeeze(yC), label=f"MP with confidence")
+    plt.plot(xF, np.squeeze(yF), label=f"MP with contribution factor")
+    plt.ylabel(ylabel)
+    plt.xlabel(xlabel)
+    plt.legend(loc='best', shadow=True)
+    plt.show()
+
+
+def byzantine_metrics(file):
+    x, y = load(file)
+    accuracy, precision, recall, f_score = y
+    plt.figure()
+    plt.plot(x, np.squeeze(precision), label=f"Precision")
+    plt.plot(x, np.squeeze(recall), label=f"Recall")
+    plt.plot(x, np.squeeze(f_score), label=f"F1 score")
+    plt.ylabel("")  # "STD accuracy"
+    plt.xlabel("Communication rounds")
+    plt.legend(loc='best', shadow=True)
+    plt.show()
+
+
+def byz_metrics():
+    x = list(range(1, 16))
+    accuracy = [0.8869346938775512, 0.8883187499999999, 0.8918936170212766, 0.8865130434782608, 0.8861777777777776,
+                0.8893181818181819, 0.8880023255813952, 0.8835880952380951, 0.8889853658536587, 0.88609,
+                0.8883717948717947, 0.8829973684210528, 0.8820945945945947, 0.8820945945945947, 0.882611428571428, ]
+    precision = [1.0]*15
+    recall = [1.0]*15
+    f_score = [1.0]*15
+    y = accuracy, precision, recall, f_score
+    save("byzantine_metrics_50_new_banned_1_15", (x, y))
+
+    plt.figure()
+    plt.plot(x, np.squeeze(precision), label=f"Precision")
+    plt.plot(x, np.squeeze(recall), label=f"Recall")
+    plt.plot(x, np.squeeze(f_score), label=f"F1 score")
+    plt.ylabel("")
+    plt.xlabel("Number of misbehaving nodes")
+    plt.legend(loc='best', shadow=True)
+    plt.show()
+
+
+def graph_sparsity(N, C, F):
+    xN, yN = load(N)
+    yN = np.poly1d(np.polyfit(xN, yN, 5))(xN)
+    xC, yC = load(C)
+    yC = np.poly1d(np.polyfit(xC, yC, 5))(xC)
+    xF, yF = load(F)
+    yF = np.poly1d(np.polyfit(xF, yF, 5))(xF)
+    plt.figure()
+    plt.plot(xN, np.squeeze(yN), label=f"MP without confidence")
+    plt.plot(xC, np.squeeze(yC), label=f"MP with confidence")
+    plt.plot(xF, np.squeeze(yF), label=f"MP with contribution factor")
+    plt.ylabel("Loss")
+    plt.xlabel("CR")
+    plt.legend(loc='best', shadow=True)
+    plt.show()
+
+
+def contribution_factor(F):
+    x, y, z = load(F)
+    plt.figure()
+    plt.plot(x, np.squeeze(y), label=f"Banned nodes")
+    plt.plot(x, np.squeeze(z), label=f"Temporary ignored nodes")
+    plt.ylabel("Number of nodes")
+    plt.xlabel("Communication rounds")
+    plt.legend(loc='best', shadow=True)
+    plt.show()
+
+
+def banned_nodes(A, B, C, D):
+    xA, yA = load(A)
+    # xB, yB = load(B)
+    # xC, yC = load(C)
+    xD, yD = load(D)
+    plt.figure()
+    plt.plot(xA, np.squeeze(yA), label="Ban threshold $\epsilon=-0.05$")
+    # plt.plot(xB, np.squeeze(yB), label="Ban threshold $\epsilon=-0.1$")
+    # plt.plot(xC, np.squeeze(yC), label="Ban threshold $\epsilon=-0.15$")
+    plt.plot(xD, np.squeeze(yD), label="Ban threshold $\epsilon=-0.2$")
+    plt.ylabel("Accuracy")
+    # plt.ylabel("STD accuracy")
+    plt.xlabel("Communication rounds")
+    plt.legend(loc='best', shadow=True)
+    plt.show()
+
+
+def ignored_nodes(A, B, C):
+    xA, yA = load(A)
+    xB, yB = load(B)
+    xC, yC = load(C)
+    plt.figure()
+    plt.plot(xA, np.squeeze(yA), label="$CF_{th}=0.0$")
+    plt.plot(xB, np.squeeze(yB), label="$CF_{th}=0.5$")
+    plt.plot(xC, np.squeeze(yC), label="$CF_{th}=1.0$")
+    plt.ylabel("Accuracy")
+    # plt.ylabel("STD accuracy")
+    plt.xlabel("Communication rounds")
+    plt.legend(loc='best', shadow=True)
     plt.show()
 
 
@@ -173,6 +282,8 @@ def communication():
 
 
 if __name__ == '__main__':
+    byz_metrics()
+    exit(0)
     # Iterations
     fileA = "./results/mp_iterations_True"
     fileB = "./results/mp_iterations_False"

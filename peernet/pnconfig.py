@@ -1,5 +1,6 @@
 import yaml
 # from .node import Node
+from peernet.constants import SOCK_TIMEOUT
 from peernet.node import Node
 from peernet.helpers import log
 
@@ -36,7 +37,7 @@ class PNConfig:
         if len(tuple_) != 2:
             log('exception', f"Enter a config file or a tuple in the form of (Number of nodes, INIT_PORT)")
         n, port = tuple_
-        self.config['timeout_ms'] = 2500
+        self.config['timeout_ms'] = SOCK_TIMEOUT
         self.config['nodes'] = []
         for i in range(n):
             self.config['nodes'].append({'name': f"w{i}", 'host': '', 'port': port + i})

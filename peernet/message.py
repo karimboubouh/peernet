@@ -52,6 +52,14 @@ def exchange_sol_model(node):
     }
 
 
+def banned_node(node):
+    return {
+        'mtype': protocol.BANNED_NODE,
+        'sender': {'name': node.name, 'shost': node.host, 'sport': node.port},
+        'status': protocol.NO_ERROR,
+    }
+
+
 def exchange_variables(node, neighbor, respond=True):
     name = neighbor['name']
     return {

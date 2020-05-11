@@ -7,11 +7,11 @@ import threading
 import traceback
 
 from . import protocol
-from .constants import M_CONSTANT
+from .constants import M_CONSTANT, SOCK_TIMEOUT
 from .helpers import log, unique_id, peer_id, data_size, find_peer
 from .updates import cl_update_secondary, cl_update_dual
 from .message import response_hello, exchange_model, request_subscribe, response_subscribe, response_information, \
-    exchange_variables
+    exchange_variables, banned_node
 
 
 # Class NodeConnection
@@ -31,11 +31,11 @@ class NodeConnection(threading.Thread):
         if peer.get('ctype', '') == "In":
             self.host = peer['chost']
             self.port = peer['cport']
-            log('success', f"{self.server.pname}: [S] Connection started with  Node({peer['name']})")
+            log('info', f"{self.server.pname}: [S] Connection started with  Node({peer['name']})")
         else:
             self.host = peer['shost']
             self.port = peer['sport']
-            log('success', f"{self.server.pname}: [C] Connection accepted from Node({peer['name']})")
+            log('info', f"{self.server.pname}: [C] Connection accepted from Node({peer['name']})")
         self.peer = peer
         self.callback = callback
         self.terminate_flag = threading.Event()
@@ -61,18 +61,21 @@ class NodeConnection(threading.Thread):
 
     def run(self):
         # Timeout, so the socket can be closed when it is dead!
-        self.sock.settimeout(10.0)
+        self.sock.settimeout(SOCK_TIMEOUT)
         # Send init message to exchange necessary nodes information in case of InNode
         if self.peer.get('ctype', '') == "In":
             self.send(request_subscribe(self.server))
 
         while not self.terminate_flag.is_set():
             try:
-                buffer = self.sock.recv(165536)
+                # buffer = self.sock.recv(165536)
+                buffer = self.sock.recv(500000)
                 self.handle_request(buffer)
                 self.server.message_count_recv = self.server.message_count_recv + 1
             except pickle.UnpicklingError as e:
-                log('exception', f"{self.server.pname}: NodeConnection: Corrupted message")
+                log('exception', f"{self.server.pname}: NodeConnection: Corrupted message. {len(buffer)}")
+            except OverflowError as e:
+                log('exception', f"{self.server.pname}: OverflowError. {len(buffer)}")
             except KeyError as e:
                 log('exception', f"{self.server.pname}: NodeConnection: KeyError")
             except socket.timeout:
@@ -90,10 +93,14 @@ class NodeConnection(threading.Thread):
         if not self.check_message(buffer):
             log('error', f"{self.server.pname}: NodeConnection: Message is damaged)")
             return False
+        if buffer == b'':
+            return False
         try:
             data = pickle.loads(buffer)
         except EOFError as e:
             log("error", f"handle_request exception: {e}")
+            print(len(buffer))
+            print(buffer)
             return
             # traceback.print_exc()
             # data = None
@@ -115,6 +122,8 @@ class NodeConnection(threading.Thread):
                     self.do_exchange_model(data)
                 elif data['mtype'] == protocol.EXCHANGE_SOL_MODEL:
                     self.do_exchange_sol_model(data)
+                elif data['mtype'] == protocol.BANNED_NODE:
+                    self.do_got_banned(data)
                 # responses ---------------------------------------
                 elif data['mtype'] == protocol.RESPONSE_SUBSCRIBE:
                     self.update_info(data)
@@ -158,27 +167,33 @@ class NodeConnection(threading.Thread):
         self.server.update_weights()
 
     def do_exchange_model(self, data):
+        # Deal with synchrony issues
         if self.server.model is None or self.server.solitary_model is None:
-            # print(f"{self.server.pname} >> Learning failed at Iteration {self.server.stop_condition}")
             self.server.stop_condition = 0
             self.send(exchange_model(self.server, respond=False))
             return
-        # check if model is not None
+
+        if self.server.protocol == "MP":
+            self.do_mp_exchange_model(data)
+        elif self.server.protocol == "CMP":
+            self.do_cmp_exchange_model(data)
+        else:
+            raise ValueError("Protocol not recognized.")
+
+    def do_mp_exchange_model(self, data):
         if data['payload']['model'] is not None:
             # update models list
             self.server.update_models(data['sender']['name'], data['payload']['model'])
-            # Send back my model if neighbor's respond is true
             if data['payload']['respond']:
                 self.send(exchange_model(self.server, respond=self.server.check_exchange()))
             # else:
             #     self.server.exclude_peer(self.peer)
-
             # update while not stop condition
             if self.server.check_exchange():
                 self.server.mp_calculate_update(data)
                 # time.sleep(random.randint(10, 100) / 1000)
                 if self.server.check_exchange():
-                    neighbor = self.server.get_random_peer(ignore_excluded=True)
+                    neighbor = self.server.get_random_peer(ignore_excluded=True)  # ignore_excluded=True
                     if neighbor:
                         exchange = exchange_model(self.server)
                         self.server.send(neighbor, exchange)
@@ -196,6 +211,69 @@ class NodeConnection(threading.Thread):
                 print("DDDDDD")
                 self.server.stop_condition = 0
                 return
+
+    def do_cmp_exchange_model(self, data):
+        # if node is banned ignore exchange operation
+        banned = False
+        name = data['sender']['name']
+        if name in self.server.banned:
+            log("warning", f"{self.server.pname} blocked collaboration with node {name}")
+            banned = True
+            # exchange_model(self.server, respond=self.server.check_exchange())
+            self.send(banned_node(self.server))
+            self.server.message_count_ignr += 1
+
+        # if contribution factor of node is less then a threshold ignore
+        valid = self.server.evaluate_model(data)
+        if not banned and not valid:
+            log("warning", f"{self.server.pname} ignored one exchange with node {name} | cf={self.server.cf[name]}")
+            self.server.message_count_ignr += 1
+            if data['payload']['respond']:
+                self.send(exchange_model(self.server, respond=self.server.check_exchange()))
+
+        if not banned and valid and data['payload']['model'] is not None:
+            # Send back my model if neighbor's respond is true
+            if data['payload']['respond']:
+                self.send(exchange_model(self.server, respond=self.server.check_exchange()))
+
+            # update models list
+            self.server.update_models(data['sender']['name'], data['payload']['model'])
+
+            # update while not stop condition
+            if self.server.check_exchange():
+                self.server.cmp_calculate_update(data)
+                # time.sleep(random.randint(10, 100) / 1000)
+                if self.server.check_exchange():
+                    neighbor = self.server.get_random_peer(ignore_excluded=True)
+                    if neighbor:
+                        exchange = exchange_model(self.server)
+                        self.server.send(neighbor, exchange)
+                    else:
+                        self.server.stop_condition = 0
+                        print("FFFFFF")
+                        return
+        else:
+            self.server.exclude_peer(find_peer(self.server, data))
+            neighbor = self.server.get_random_peer(ignore_excluded=True)  # ignore_excluded=True
+            if neighbor:
+                exchange = exchange_model(self.server)
+                self.server.send(neighbor, exchange)
+            else:
+                print("DDDDDD")
+                self.server.stop_condition = 0
+                return
+
+    def do_got_banned(self, data):
+        peer = find_peer(self.server, data)
+        self.server.exclude_peer(peer)
+        self.server.stop_condition -= 1
+        self.server.costs.append(self.server.costs[-1])
+        if self.server.check_exchange():
+            neighbor = self.server.get_random_peer(ignore_excluded=True)
+            if neighbor:
+                self.server.send(neighbor, exchange_model(self.server))
+            else:
+                self.server.stop_condition = 0
 
     def do_cl_update(self, data):
         # CURRENT ROUND if SC > 0
@@ -216,7 +294,6 @@ class NodeConnection(threading.Thread):
 
             # NEXT ROUND if SC > 0
             if self.server.check_exchange():
-                # print(f"{self.server.pname} NEW ROUND {self.server.stop_condition}")
                 neighbor = self.server.get_random_peer(ignore_excluded=True)
                 if neighbor:
                     self.server.update_primal(neighbor)

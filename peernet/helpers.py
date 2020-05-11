@@ -3,6 +3,8 @@ import random
 import string
 import time
 import pickle
+from pydoc import locate
+
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
@@ -13,8 +15,8 @@ from .constants import *
 def create_tcp_socket():
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    # sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, TCP_SOCKET_BUFFER_SIZE)
-    # sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, TCP_SOCKET_BUFFER_SIZE)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, TCP_SOCKET_BUFFER_SIZE)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, TCP_SOCKET_BUFFER_SIZE)
     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     return sock
 
@@ -59,10 +61,24 @@ def sample(data, n, numpy_array=False):
         return random.sample(data, n)
 
 
-def sample_xy(X, y, n, seed):
-    # np.random.seed(seed)
-    mask = np.random.choice(X.shape[0], n, replace=False)
+def sample_xy(X, y, n, replace=False):
+    mask = np.random.choice(X.shape[0], n, replace=replace)
     return X[mask, :], y[mask]
+
+
+def algo_from_dict(algorithm: dict):
+    """Get the wrapper and algorithm class by providing a configuration dict"""
+    if algorithm['wrapper'] in WRAPPERS.keys():
+        wrapper = locate(WRAPPERS[algorithm['wrapper']])
+    else:
+        raise ValueError("Wrapper not supported.")
+
+    if algorithm['model'] in ALGORITHM.keys():
+        model = locate(ALGORITHM[algorithm['model']])
+    else:
+        raise ValueError("Model not supported.")
+
+    return wrapper, model
 
 
 def random_number(min_size, max_size, epsilon=0.0, distribution="random", seed=0):
@@ -82,8 +98,18 @@ def random_number(min_size, max_size, epsilon=0.0, distribution="random", seed=0
     return n
 
 
+def random_int(size, min_size=0, epsilon=None):
+    if not epsilon:
+        epsilon = 1
+    mu = size / 2
+    sigma = mu * epsilon
+    n = min_size - 1
+    while n < min_size or n > size:
+        n = int(np.rint(np.random.normal(mu, sigma)))
+    return n
+
+
 def shuffle(X, y):
-    # np.random.seed(SHUFFLE_SEED)
     shuffle_index = np.random.permutation(X.shape[0])
     return X[shuffle_index], y[shuffle_index]
 
@@ -148,13 +174,13 @@ def log(mtype, message=''):
         print(f"\033[31mEXCEPTION >>\033[0m {message}")
         return
     if mtype == 'error' and DEBUG_LEVEL > 1:
-        print('\033[31m', "ERROR >>    ", '\033[0m', message)
+        print(f"\033[31mERROR     >>\033[0m {message}")
         return
-    if mtype == 'event' and DEBUG_LEVEL > 1:
+    if mtype == 'event' and DEBUG_LEVEL > 3:
         print(f"\033[35mEVENT     >>\033[0m {message}")
         return
     if mtype == 'warning' and DEBUG_LEVEL > 2:
-        print('\033[33m', "WARNING >>  ", '\033[0m', message)
+        print(f"\033[33mWARNING   >>\033[0m {message}")
         return
     if mtype == 'success' and DEBUG_LEVEL > 2:
         print(f"\033[32mSUCCESS   >>\033[0m {message}")
@@ -170,8 +196,9 @@ def log(mtype, message=''):
         return
 
 
-def bold(text):
+def bold(text: str):
     return f"\033[1m{text}\033[0m"
+
 
 def mnist_noniid(dataset, num_users):
     """
@@ -184,7 +211,7 @@ def mnist_noniid(dataset, num_users):
     num_shards, num_imgs = 200, 300
     idx_shard = [i for i in range(num_shards)]
     dict_users = {i: np.array([]) for i in range(num_users)}
-    idxs = np.arange(num_shards*num_imgs)
+    idxs = np.arange(num_shards * num_imgs)
     labels = dataset.train_labels.numpy()
 
     # sort labels
@@ -198,7 +225,7 @@ def mnist_noniid(dataset, num_users):
         idx_shard = list(set(idx_shard) - rand_set)
         for rand in rand_set:
             dict_users[i] = np.concatenate(
-                (dict_users[i], idxs[rand*num_imgs:(rand+1)*num_imgs]), axis=0)
+                (dict_users[i], idxs[rand * num_imgs:(rand + 1) * num_imgs]), axis=0)
     return dict_users
 
 
@@ -215,7 +242,7 @@ def mnist_noniid_unequal(dataset, num_users):
     num_shards, num_imgs = 1200, 50
     idx_shard = [i for i in range(num_shards)]
     dict_users = {i: np.array([]) for i in range(num_users)}
-    idxs = np.arange(num_shards*num_imgs)
+    idxs = np.arange(num_shards * num_imgs)
     labels = dataset.train_labels.numpy()
 
     # sort labels
@@ -229,7 +256,7 @@ def mnist_noniid_unequal(dataset, num_users):
 
     # Divide the shards into random chunks for every client
     # s.t the sum of these chunks = num_shards
-    random_shard_size = np.random.randint(min_shard, max_shard+1,
+    random_shard_size = np.random.randint(min_shard, max_shard + 1,
                                           size=num_users)
     random_shard_size = np.around(random_shard_size /
                                   sum(random_shard_size) * num_shards)
@@ -245,10 +272,10 @@ def mnist_noniid_unequal(dataset, num_users):
             idx_shard = list(set(idx_shard) - rand_set)
             for rand in rand_set:
                 dict_users[i] = np.concatenate(
-                    (dict_users[i], idxs[rand*num_imgs:(rand+1)*num_imgs]),
+                    (dict_users[i], idxs[rand * num_imgs:(rand + 1) * num_imgs]),
                     axis=0)
 
-        random_shard_size = random_shard_size-1
+        random_shard_size = random_shard_size - 1
 
         # Next, randomly assign the remaining shards
         for i in range(num_users):
@@ -262,7 +289,7 @@ def mnist_noniid_unequal(dataset, num_users):
             idx_shard = list(set(idx_shard) - rand_set)
             for rand in rand_set:
                 dict_users[i] = np.concatenate(
-                    (dict_users[i], idxs[rand*num_imgs:(rand+1)*num_imgs]),
+                    (dict_users[i], idxs[rand * num_imgs:(rand + 1) * num_imgs]),
                     axis=0)
     else:
 
@@ -273,7 +300,7 @@ def mnist_noniid_unequal(dataset, num_users):
             idx_shard = list(set(idx_shard) - rand_set)
             for rand in rand_set:
                 dict_users[i] = np.concatenate(
-                    (dict_users[i], idxs[rand*num_imgs:(rand+1)*num_imgs]),
+                    (dict_users[i], idxs[rand * num_imgs:(rand + 1) * num_imgs]),
                     axis=0)
 
         if len(idx_shard) > 0:
@@ -286,7 +313,7 @@ def mnist_noniid_unequal(dataset, num_users):
             idx_shard = list(set(idx_shard) - rand_set)
             for rand in rand_set:
                 dict_users[k] = np.concatenate(
-                    (dict_users[k], idxs[rand*num_imgs:(rand+1)*num_imgs]),
+                    (dict_users[k], idxs[rand * num_imgs:(rand + 1) * num_imgs]),
                     axis=0)
 
     return dict_users

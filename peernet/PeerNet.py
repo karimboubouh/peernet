@@ -1,5 +1,5 @@
 import csv
-import h5py
+# import h5py
 import joblib
 import threading
 import time
@@ -13,23 +13,27 @@ from os.path import basename
 from . import algorithms
 from .node import Node
 from .pnconfig import PNConfig
-from .helpers import log, sample, bold, save, shuffle, sample_xy, random_number, data_size
-from .constants import ALGORITHMS, DEBUG_LEVEL, EPSILON_STEP
-import peernet.constants as sharedVars
+from .helpers import log, sample, bold, save, shuffle, sample_xy, random_number, data_size, algo_from_dict
+from .constants import PROTOCOLS, DEBUG_LEVEL, EPSILON_STEP
+from .datasets import fetch_mnist, fetch_cifar, iid_sample, noniid_sample, mnist_iid_sample, mnist_iid, mnist_noniid
+import peernet.constants as c
 
 
 # Class PeerNet ---------------------------------------------------------
 
 class PeerNet:
+    protocol = "MP"
     verbose = 4
+
     def __init__(self, config_file):
         # Initialization
         self.config = PNConfig(config_file)
         self.nodes = self.config.get_nodes()  # type: List[Node]
         self.epsilon = 0.0
         self.results = []
-        random.seed(100)
-        np.random.seed(100)
+        c.TRAINED_MODELS = len(self.nodes)
+        # random.seed(100)
+        # np.random.seed(100)
 
     def init(self):
         for node in self.nodes:
@@ -46,12 +50,11 @@ class PeerNet:
 
     def stop(self):
         # Stop the nodes
-        print('Stoping nodes')
         for node in self.nodes:
             node.stop()
         for node in self.nodes:
             node.join()
-        print('Nodes joined')
+        print(bold("System shutdown"))
 
     def network(self, network_strategy, p=None):
         """Network architecture """
@@ -67,6 +70,48 @@ class PeerNet:
     def sleep(s):
         log('info', f"Sleep for {s} second(s)...")
         time.sleep(s)
+
+    def load_data(self, dataset: str = None, pre=None, iid=True, balancedness=1.0, epsilon=None):
+        start_time = time.time()
+        if 'mnist' in dataset.lower():
+            data = fetch_mnist(pre=pre)
+            x_train, y_train, x_test, y_test = data
+            if iid:
+                nodes_data = mnist_iid(x_train, y_train, len(self.nodes), balancedness)
+            else:
+                nodes_data = mnist_noniid(x_train, y_train, len(self.nodes), balancedness)
+        elif 'cifar' in dataset.lower():
+            data = fetch_cifar(pre=pre)
+            x_train, y_train, x_test, y_test = data
+            nodes_data = mnist_iid_sample(x_train, y_train, nodes=len(self.nodes), balanced=balancedness)
+        else:
+            raise ValueError(f" {dataset} not supported.")
+
+        for i, node in enumerate(self.nodes):
+            x = nodes_data
+            node.ldata = {
+                'x_train': nodes_data[i][0],
+                'y_train': nodes_data[i][1],
+                'x_test': x_test,
+                'y_test': y_test,
+            }
+
+        x_train, y_train, x_test, y_test = data
+        # for i, node in enumerate(self.nodes):
+        #     if iid:
+        #         x, y = iid_sample(x_train, y_train, balanced=balanced, epsilon=epsilon)
+        #     else:
+        #         x, y = noniid_sample(x_train, y_train, balanced=balanced, epsilon=epsilon)
+        #
+        #     node.ldata = {
+        #         'x_train': x,
+        #         'y_train': y,
+        #         'x_test': x_test,
+        #         'y_test': y_test,
+        #     }
+
+        end_time = round(time.time() - start_time, 4)
+        print(f"\nData distributed in {end_time} seconds.")
 
     def load_dataset(self, dataset, df=False, min_samples=1, dtype=float, sep=',', data_distribution="random"):
         """
@@ -100,23 +145,6 @@ class PeerNet:
                     else:
                         node.ldata = sample(data, n)
             log('info', "Data loaded and randomly distributed over the nodes")
-        elif basename(dataset) == "MNIST.hdf5":
-            start_time = time.time()
-            data = h5py.File(dataset, 'r')
-            # size = len(data[list(data.keys())[0]])
-            for i, node in enumerate(self.nodes):
-                n = random.randrange(min_samples, len(data['x_train']))
-                np_sample = lambda x, rn: x[np.random.choice(x.shape[0], rn, replace=False), :]
-                ldata = {
-                    'x_train': pd.DataFrame(np_sample(data['x_train'][()], n), dtype=dtype),
-                    'y_train': pd.DataFrame(np_sample(data['y_train'][()], n), dtype=dtype),
-                    'x_test': pd.DataFrame(data['x_test'][()], dtype=dtype),
-                    'y_test': pd.DataFrame(data['y_test'][()], dtype=dtype)
-                }
-                node.ldata = ldata
-                print('.', end='')
-            data.close()
-            print("\n--- %s seconds ---" % (time.time() - start_time))
         elif basename(dataset) == "mnist.data":
             start_time = time.time()
             X, y = joblib.load(dataset)
@@ -149,8 +177,54 @@ class PeerNet:
             raise Exception("Dataset not supported.")
         return self
 
+    def _compile(self, **kwargs):
+        algorithm = kwargs.get('algorithm', None)
+        protocol = kwargs.get('protocol', "MP")
+        args = kwargs.get('args', None)
+        analysis = kwargs.get('analysis', None)
+        wrapper, model = algo_from_dict(algorithm)
+        target = PeerNet.protocol_target(protocol)
+        for node in self.nodes:
+            node.protocol = protocol
+            node.use_cf = args['protocol']['confidence']
+        return wrapper, model, target, args, analysis
+
+    def byzantine(self, behavior):
+        if behavior['Byzantine'] > 0:
+            byz = np.random.choice(range(len(self.nodes)), behavior['Byzantine'], replace=False)
+            print(f"Byzantine nodes: {byz}")
+            for i, node in enumerate(self.nodes):
+                if i in byz:
+                    node.byzantine = True
+            for node in self.nodes:
+                cm_node = list(np.sort([int(peer['name'][1:]) for peer in node.peers]))
+                for i, p in enumerate(cm_node):
+                    if p in byz:
+                        cm_node[i] = 1
+                    else:
+                        cm_node[i] = 0
+                node.cm_true = cm_node
+
     def train(self, **kwargs):
-        sharedVars.TRAINED_MODELS = len(self.nodes)
+        wrapper, model, target, args, analysis = self._compile(**kwargs)
+
+        print(bold('Starting training...'))
+        start_time = time.time()
+        threads = []
+        for node in self.nodes:
+            t = threading.Thread(target=target, args=(node, wrapper, model, args,), daemon=True)
+            threads.append(t)
+            t.start()
+
+        for index, thread in enumerate(threads):
+            thread.join()
+        end_time = round(time.time() - start_time, 4)
+        print(bold(f"\nTraining done in {end_time} seconds."))
+
+        self.analysis(analysis)  # measure="std"
+
+    def train2(self, **kwargs):
+        c.TRAINED_MODELS = len(self.nodes)
         model = kwargs.get('model', None)
         pre_processing = kwargs.get('pre', None)
         algorithm = kwargs.get('algorithm', "MP")
@@ -159,7 +233,7 @@ class PeerNet:
         if not model:
             log('exception', f"No model provided")
             raise Exception(f"No model provided")
-        if algorithm not in ALGORITHMS:
+        if algorithm not in PROTOCOLS:
             log('exception', f"Unknown algorithm provided")
             raise Exception(f"Unknown algorithm provided")
         target = None
@@ -183,10 +257,44 @@ class PeerNet:
             node.solitary_model = None
             node.costs = []
             node.models = {}
-            node.c = 1 + sharedVars.M_CONSTANT
+            node.c = 1 + c.M_CONSTANT
 
-    def analysis(self, atype):
-        if atype == 'iterations':
+    def analysis(self, atype, measure="mean"):
+        if atype == 'communication_rounds':
+            length = max([len(node.costs) for node in self.nodes])
+            for node in self.nodes:
+                node.costs.extend([np.mean(node.costs)] * (length - len(node.costs)))
+            if measure == "mean":
+                self.results = np.mean([node.costs for node in self.nodes], axis=0)
+            elif measure == "std":
+                self.results = np.std([node.costs for node in self.nodes], axis=0)
+            elif measure == "max":
+                self.results = np.max([node.costs for node in self.nodes], axis=0)
+        elif atype == 'byzantine':
+            costs = np.array([node.costs for node in self.nodes if node.byzantine is False])
+            self.results = np.mean(costs, axis=0)
+        elif atype == 'byzantine_metrics':
+            precision = np.mean([node.cm['precision'][-1] for node in self.nodes if node.byzantine is False], axis=0)
+            recall = np.mean([node.cm['recall'][-1] for node in self.nodes if node.byzantine is False], axis=0)
+            f_score = np.mean([node.cm['f_score'][-1] for node in self.nodes if node.byzantine is False], axis=0)
+            accuracy = np.mean([node.costs[-1] for node in self.nodes if node.byzantine is False], axis=0)
+            # self.results = accuracy, precision, recall, f_score
+            print(f"Accuracy={accuracy} | precision={precision} | recall={recall} | f_score={f_score}")
+        elif atype == 'contribution_factor':
+            blength = max([len(node.bans) for node in self.nodes])
+            ilength = max([len(node.ignores) for node in self.nodes])
+            for node in self.nodes:
+                node.bans.extend([node.bans[-1]] * (blength - len(node.bans)))
+                node.ignores.extend([node.ignores[-1]] * (ilength - len(node.ignores)))
+            self.results.append(np.sum([node.bans for node in self.nodes], axis=0))
+            self.results.append(np.sum([node.ignores for node in self.nodes], axis=0))
+        elif atype == 'data_unbalancedness':
+            costs = [node.costs[-1] for node in self.nodes]
+            self.results = np.sum(costs)
+        elif atype == 'graph_sparsity':
+            costs = [node.costs[-1] for node in self.nodes]
+            self.results = np.sum(costs)
+        elif atype == 'iterations':
             # costs = [node.costs[-1] for node in self.nodes]
             # self.results.append(np.mean(costs))
             self.results = np.sum([node.costs for node in self.nodes], axis=0)
@@ -240,19 +348,35 @@ class PeerNet:
             self.results = c
         elif atype == 'cvsd':
             self.results = [node.accuracy for node in self.nodes]
+        else:
+            pass
 
     def info(self, show="peers", verbose=False):
         log("Printing information...")
         if show == "peers":
             print(f"List of nodes ({len(self.nodes)})")
             for node in self.nodes:
-                print(f"{node.pname}: has {data_size(node)} local data items, and {len(node.peers)} neighbors.")
+                p = [peer['name'] for peer in node.peers]
+                print(f"{node.pname}: has {data_size(node)} data items, and {len(node.peers)} neighbors: {p}")
                 if verbose:
                     for peer in node.peers:
                         log(f"{peer}")
                     log("---")
 
     # -----------------------------------------------------------------------------
+
+    @staticmethod
+    def protocol_target(protocol):
+        if protocol not in PROTOCOLS:
+            raise SystemExit(log('exception', "Unknown protocol."))
+        if protocol == "MP":
+            return algorithms.model_propagation
+        elif protocol == "CMP":
+            return algorithms.controlled_model_propagation
+        elif protocol == "CL":
+            return algorithms.collaborative_learning
+        else:
+            return algorithms.local_learning
 
     def run_training(self, target, model, pre_processing, params):
         threads = []

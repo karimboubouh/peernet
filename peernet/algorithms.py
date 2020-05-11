@@ -1,19 +1,186 @@
-import random
+import copy
 import time
-
-import joblib
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 
-from peernet.message import request_information, exchange_model, exchange_sol_model, exchange_variables
-import peernet.constants as sharedVars
-from .helpers import log, wait_until, data_size, shuffle
+from peernet.message import request_information, exchange_model, exchange_sol_model
+import peernet.constants as c
+from .datasets import fetch_mnist
+from .helpers import log, wait_until, data_size, algo_from_dict
 
 
-def model_propagation(node, model, pre=None, params=None):
+def model_propagation(node, wrapper, model, args=None):
+    # todo Remove it
+    node.stop_condition = c.STOP_CONDITION
+
+    x_train, y_train, x_test, y_test = extract_data(node.ldata)
+
+    algorithm_args = args.get('algorithm', None)
+    params = args.get('protocol', None)
+    behavior = args.get('behavior', None)
+
+    if node.byzantine:
+        m = random_model(wrapper(model), (10, x_train.shape[1]))
+    else:
+        # Local training
+        m = wrapper(model, **algorithm_args)
+        m.train(x_train, y_train)
+    m.evaluate(x_test, y_test)
+
+    # Set node model and announce finish local train
+    node.solitary_model = m
+    node.model = copy.deepcopy(m)
+    c.ll_done()
+
+    # Local accuracy
+    ll_score = node.solitary_model.summary()['test_score']
+    if params.get('results', None):
+        log("result", f"{node.pname} >> Finishes Local training with Test Accuracy: {ll_score}")
+    node.costs = []
+    # node.costs.append(ll_score)
+
+    # Wait for nodes to finish the local learning step
+    wait_until(ll_finished, 600, 0.5)
+    # Exchange necessary information if not already
+    if params.get('confidence', None):
+        for neighbor in node.peers:
+            node.send(neighbor, request_information(node))
+        wait_until(data_received, 600, 0.5, node)
+
+    # Start the MP algorithm
+    neighbor = node.get_random_peer()
+    exchange = exchange_model(node)
+    node.send(neighbor, exchange)
+
+    # Wait for the model reaches a target accuracy
+    # todo wait until done : node.reached_target_accuracy == True
+    wait_until(finished, 600, 0.5, node)
+
+    # evaluate the final model
+    node.model.evaluate(x_test, y_test)
+
+    # print(f"{node.pname} pre={np.sum(node.solitary_model.weights)} | post = {np.sum(node.model.weights)}")
+
+    # Print results
+    if params.get('results', None):
+        mp_score = node.model.summary()['test_score']
+        log("result", f"{node.pname} >> [C:{node.c}] Local Test Accuracy: {ll_score} %| Smooth Model Accuracy:"
+                      f" {mp_score} % | [{len(node.peers)} neighbors] [{data_size(node)} local data items]")
+
+
+def controlled_model_propagation(node, wrapper, model, args=None):
+    node.stop_condition = c.STOP_CONDITION
+
+    x_train, y_train, x_test, y_test = extract_data(node.ldata)
+    algorithm_args = args.get('algorithm', None)
+    params = args.get('protocol', None)
+
+    # Local training
+    m = wrapper(model, **algorithm_args)
+    m.train(x_train, y_train)
+    if node.byzantine:
+        m = random_model(wrapper(model), (10, x_train.shape[1]))
+    else:
+        # Local training
+        m.train(x_train, y_train)
+    m.evaluate(x_test, y_test)
+
+    # Set node model and announce finish local train
+    node.solitary_model = m
+    node.model = copy.deepcopy(m)
+    c.ll_done()
+
+    # Local accuracy
+    ll_score = node.solitary_model.summary()['test_score']
+    if params.get('results', None):
+        log("result", f"{node.pname} >> Finishes Local training with Test Accuracy: {ll_score}")
+    node.costs = []
+    # node.costs.append(ll_score)
+
+    # Wait for nodes to finish the local learning step
+    wait_until(ll_finished, 600, 0.5)
+
+    # Start the MP algorithm
+    neighbor = node.get_random_peer()
+    exchange = exchange_model(node)
+    node.send(neighbor, exchange)
+
+    # Wait for the model reaches a target accuracy
+    # todo wait until done : node.reached_target_accuracy == True
+    wait_until(finished, 600, 1, node)
+
+    # evaluate the final model
+    node.model.evaluate(x_test, y_test)
+
+    # print(f"{node.pname} pre={np.sum(node.solitary_model.weights)} | post = {np.sum(node.model.weights)}")
+
+    # Print results
+    if params.get('results', None):
+        mp_score = node.model.summary()['test_score']
+        if c.CONFIDENCE_MEASURE == 'max':
+            cf = 1 / np.max(list(node.cf.values()))
+        else:
+            cf = 1 / np.mean(list(node.cf.values()))
+        log("result", f"{node.pname} >> [CF:{cf}] Local Test Accuracy: {ll_score} %| Smooth Model Accuracy:"
+                      f" {mp_score} % | [{len(node.peers)} neighbors] [{data_size(node)} local data items]")
+
+
+def fair_model_propagation(node, model, pre=None, params=None):
+    # Pre-processing step
+    X_train, X_test, y_train, y_test = pre(node.ldata)
+
+    # Set nodes test data
+    node.X_test = X_test
+    node.y_test = y_test
+
+    # Training the local model
+    m = model()
+    m.fit(X_train, y_train)
+    m.evaluate(X_test, y_test)
+
+    # Set node model
+    node.solitary_model = node.model = m
+
+    # declare that node finished the local learning
+    c.ll_done()
+
+    # Local accuracy
+    score = m.summary()['test_score']
+    # sol_accuracy = m.metrics(X_test, y_test)
+    log("success", f"{node.pname} >> Local model score: {score}")
+
+    # Add local cost to the list of costs (node.costs)
+    node.costs = []
+    node.costs.append(score)
+
+    # Wait for nodes to finish the local learning step
+    wait_until(ll_finished, 600, 0.5)
+
+    # Exchange necessary information if not already
+    if params['confidence']:
+        for neighbor in node.peers:
+            node.send(neighbor, request_information(node))
+        # Wait until data received
+        wait_until(data_received, 600, 0.5, node)
+
+    # Start the MP algorithm
+    neighbor = node.get_random_peer()
+    exchange = exchange_model(node)
+    node.send(neighbor, exchange)
+
+    # Wait for the model reaches a target accuracy
+    wait_until(finished, 600, 0.5, node)
+
+    # Print results
+    if params['show_results']:
+        accuracy = node.model.summary()['test_score']
+        log("result", f"{node.pname} >> [C:{node.c}] Solitary model score: {score} %| Smooth model score:"
+                      f" {accuracy} % | [{len(node.peers)} neighbors] [{data_size(node)} local data items]")
+
+
+def ___model_propagation(node, model, pre=None, params=None):
     # Set decentralized learning stop Condition
-    node.stop_condition = sharedVars.STOP_CONDITION
+    node.stop_condition = c.STOP_CONDITION
 
     # Pre-processing step
     X_train, X_test, y_train, y_test = pre(node.ldata)
@@ -39,7 +206,7 @@ def model_propagation(node, model, pre=None, params=None):
     node.solitary_model = m
     # sw = np.sum(node.solitary_model.parameters)
     node.model = m
-    sharedVars.ll_done()
+    c.ll_done()
 
     # Local accuracy
     summary = m.summary(X_train, y_train, X_test, y_test)
@@ -52,7 +219,7 @@ def model_propagation(node, model, pre=None, params=None):
     # print(f"[{node.name}-{node.model.test_cost(X_test, y_test)}]", end="-")
     # node.costs.append(node.model.test_cost(X_test, y_test))
     node.costs.append(node.model.test_cost(X_test, y_test))
-    wait_until(ll_finished, 600, 0.25)
+    wait_until(ll_finished, 600, 0.5)
     # TODO Mini  batch gradient descent.
     # print(f"{node.pname} [{len(node.peers)}] >> SModel accuracy: {sol_accuracy} with loss {node.costs} after {epochs} epochs.")
     # exit(0)
@@ -63,7 +230,7 @@ def model_propagation(node, model, pre=None, params=None):
             # if not neighbor.get("data_size", None):
             node.send(neighbor, request_information(node))
         # Wait until data received
-        wait_until(data_received, 600, 0.25, node)
+        wait_until(data_received, 600, 0.5, node)
 
     # Smooth the model over network
     neighbor = node.get_random_peer()
@@ -71,7 +238,7 @@ def model_propagation(node, model, pre=None, params=None):
     node.send(neighbor, exchange)
 
     # Wait for Stop condition
-    wait_until(finished, 600, 0.25, node)
+    wait_until(finished, 600, 0.5, node)
 
     # Print results
     if params['show_results']:
@@ -95,7 +262,7 @@ def collaborative_learning(node, model, pre=None, params=None):
     m = model(debug=params['debug'], node_name=node.pname, epochs=params['epochs'])
     m.fit(X_train, y_train)
     node.solitary_model = m
-    sharedVars.ll_done()
+    c.ll_done()
     node.model = m
     summary = m.summary(X_train, y_train, X_test, y_test)
     sol_accuracy = round(summary['test_acc'], 4)
@@ -107,13 +274,13 @@ def collaborative_learning(node, model, pre=None, params=None):
 
     #  ---- STEP 2 :: ---- : Collaborative Learning setup
     # Set decentralized learning stop Condition
-    node.stop_condition = sharedVars.STOP_CONDITION
+    node.stop_condition = c.STOP_CONDITION
     node.Theta[node.name] = m.parameters
     node.Z[node.name] = m.parameters
     node.A[node.name] = 0
     node.rho = 4
     node.mu = 0.5
-    wait_until(ll_finished, 600, 0.25)
+    wait_until(ll_finished, 600, 0.5)
     # Share solitaryModel with neighbors
     for neighbor in node.peers:
         node.send(neighbor, exchange_sol_model(node))
@@ -124,7 +291,7 @@ def collaborative_learning(node, model, pre=None, params=None):
     node.update_primal(neighbor)
 
     #  ---- STEP 4 :: ---- : Collect Collaborative Learning results
-    wait_until(finished, 600, 0.25, node)
+    wait_until(finished, 600, 0.5, node)
     # Print results
     node.model.parameters = node.Theta[node.name]
 
@@ -156,38 +323,24 @@ def local_learning(node, model, pre=None, params=None):
     log("result", f"{node.pname} >> Model Accuracy: {acc} % | [{len(node.peers)} neighbors] [{X_train.shape[1]} items]")
 
 
-def one_node_ll(model, dataset, pre, params):
-    # Pre-processing step
-    X, y = joblib.load(f"./datasets/{dataset}")
-    X_train = X[:60000]
-    y_train = y[:60000]
-    x_test = X[60000:]
-    y_test = y[60000:]
-    X_train, y_train = shuffle(X_train, y_train)
+def one_node_ll(algorithm, dataset, pre, args):
+    wrapper, model = algo_from_dict(algorithm)
+    # fetch and preprocess data
+    x_train, y_train, x_test, y_test = fetch_mnist(train_size=6000, pre=pre)
 
-    data = {
-        'x_train': pd.DataFrame(X_train, dtype=float),
-        'y_train': pd.DataFrame(y_train, dtype=float),
-        'x_test': pd.DataFrame(x_test[()], dtype=float),
-        'y_test': pd.DataFrame(y_test[()], dtype=float),
-    }
-    X_train, X_test, y_train, y_test = pre(data)
-
-    # Training the solitary model
-    debug = params.get('debug', False)
-    epochs = params.get('epochs', 9)
-    m = model(debug=params['debug'], name='SOTA', epochs=epochs)
-    m.fit(X_train, y_train)
+    # Training
+    m = wrapper(model, **args)
+    m.train(x_train, y_train)
+    m.evaluate(x_test, y_test)
 
     # Summary of the training
-    summary = m.summary(X_train, y_train, X_test, y_test)
-    train_acc = round(summary['train_acc'], 4)
-    test_acc = round(summary['test_acc'], 4)
+    summary = m.summary()
 
     # Log results
-    log("result", f"SOTA >> Train Accuracy: {train_acc} % | Test Accuracy: {test_acc} % | [{X_train.shape[1]} items]")
+    log("result", f"SOTA >> Train Accuracy: {summary['train_score']} % | "
+                  f"Test Accuracy: {summary['test_score']} % | [{x_train.shape[0]} items]")
 
-    return test_acc
+    return m
 
 
 # ------------------------------ Local functions ------------------------------
@@ -207,15 +360,36 @@ def analysis(node, atype='confidence'):
         plt.show()
 
 
+def extract_data(data: dict):
+    x_train = data['x_train']
+    y_train = data['y_train']
+    x_test = data['x_test']
+    y_test = data['y_test']
+
+    return x_train, y_train, x_test, y_test
+
+
+def random_model(model, shape):
+    a = shape[0] if shape[0] > 1 else 2
+    b = shape[1]
+    rX = np.random.rand(a, b)
+    rY = np.array([str(x) for x in range(a)])
+    model.train(rX, rY)
+
+    return model
+
+
 def finished(node):
-    if node.stop_condition == 0:
+    # if node.stop_condition == 0:
+    if not node.check_exchange():
         return True
-    # print(f"{node.pname} ++ {node.stop_condition}")
+    # if node.name == 'w3' and node.stop_condition % 20 == 0:
+    #     print(f"{node.pname} ++ {node.stop_condition}")
     return False
 
 
 def ll_finished():
-    if sharedVars.TRAINED_MODELS == 0:
+    if c.TRAINED_MODELS == 0:
         return True
     return False
 

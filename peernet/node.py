@@ -4,17 +4,15 @@ import socket
 import time
 import threading
 import traceback
-from typing import List
-
 import numpy as np
+from sklearn.metrics import precision_score, recall_score, f1_score
 
-from . import protocol
-from .constants import M_CONSTANT
+from .constants import M_CONSTANT, TEST_SAMPLE, CF_THRESHOLD, EPSILON_FAIRNESS, ACCURACY_METRIC
 from .message import exchange_variables
 from .protocol import *
 from .node_connection import NodeConnection
-from .helpers import log, bold, unique_id, create_tcp_socket, peer_id, _p
-from .updates import mp_update, cl_update_primal, cl_update_secondary, cl_update_dual
+from .helpers import log, bold, unique_id, create_tcp_socket, peer_id, _p, sample_xy
+from .updates import mp_update, cl_update_primal, cl_update_secondary, cl_update_dual, cmp_update
 
 
 # Class Node
@@ -31,6 +29,7 @@ class Node(threading.Thread):
         # Identification
         self.id = unique_id(10)
         self.name = node_config['name']
+        self.byzantine = False
         self.ldata = {}
         self.X = None
         self.y = None
@@ -41,13 +40,22 @@ class Node(threading.Thread):
         self.port = node_config['port']
         self.timeout_ms = timeout_ms
         # Algorithm details
+        self.protocol = "MP"
+        self.use_cf = True
         self.solitary_model = None
         self.model = None
         self.models = {}
         self.costs = []
+        self.bans = []
+        self.ignores = []
+        self.cm = {'precision': [], 'recall': [], 'f_score': []}
+        self.cm_true = []
+
         self.W = {}
         self.D = 0.0  # represent the value Dii
         self.c = 1 + M_CONSTANT  # Confidence values
+        self.cf = {}  # contribution factor
+        self.ff = {}  # fairness control
         self.alpha = 0.9
         # CL
         self.Theta = {}
@@ -56,6 +64,7 @@ class Node(threading.Thread):
         self.rho = 1
         self.mu = 0.5
         self.stop_condition = None
+        self.target_accuracy = 0
         # Implementation details
         self.excluded_peers = []
         self.lock = threading.RLock()
@@ -63,6 +72,7 @@ class Node(threading.Thread):
         self.callback = callback
         # List of node peers (ex:[{shost, sport, weight, [node, conn, ...]}...])
         self.peers = []
+        self.banned = []
         # Nodes (Threads) that have established a connection with this node N->(self)
         # (ex: [NodeConnection])
         self.nodesIn = []
@@ -77,9 +87,10 @@ class Node(threading.Thread):
         # statistical attributes
         self.message_count_send = 0
         self.message_count_recv = 0
+        self.message_count_ignr = 0
         self.accuracy = 0
-        random.seed(100)
-        np.random.seed(100)
+        # random.seed(100)
+        # np.random.seed(100)
 
     def __str__(self):
         return f"Node({self.name})"  # can be more readable
@@ -95,6 +106,7 @@ class Node(threading.Thread):
         self._init_server()
 
     def run(self):
+        self.sock.settimeout(None)
         while not self.terminate_flag.is_set():
             try:
                 log('info', f"{self.pname}: Waiting for incoming connections ...")
@@ -109,6 +121,7 @@ class Node(threading.Thread):
 
             except socket.timeout as e:
                 log('exception', f"{self.pname}: Socket timeout!\n{e}")
+                pass
             except Exception as e:
                 log('exception', f"{self.pname}: Exception!\n{e}")
                 traceback.print_exc()
@@ -196,40 +209,67 @@ class Node(threading.Thread):
         else:
             raise Exception(f"Wrong type for argument 'include': ({type(include)})!")
 
+    # CMP::Calculate model updates over network
+    def cmp_calculate_update(self, data):
+        with self.lock:
+            if self.check_exchange():
+                self.stop_condition -= 1
+                if self.model is not None:
+                    model = copy.deepcopy(self.model)
+                    cmp_update(self)
+                    if self.model is None:
+                        self.model = model
+                    x_test, y_test = self.ldata['x_test'], self.ldata['y_test']
+                    cost = self.model.evaluate(x_test, y_test)
+                    if ACCURACY_METRIC == "loss":
+                        self.costs.append(self.model.summary()['test_loss'])
+                    elif ACCURACY_METRIC == "precision":
+                        self.costs.append(self.model.summary()['precision'])
+                    elif ACCURACY_METRIC == "recall":
+                        self.costs.append(self.model.summary()['recall'])
+                    elif ACCURACY_METRIC == "f1_score":
+                        self.costs.append(self.model.summary()['f1_score'])
+                    else:
+                        self.costs.append(cost)
+                        self.target_accuracy = cost
+                    self.bans.append(len(self.banned))
+                    self.ignores.append(self.message_count_ignr)
+                    if not self.byzantine and len(self.cm_true) > 0:
+                        self.calculate_cm()
+
     # MP::Calculate model updates over network
     def mp_calculate_update(self, data):
 
         with self.lock:
             if self.check_exchange():
                 self.stop_condition -= 1
-                # alpha_bar = (1 - self.alpha)
-                # # update W -----------------------------------------------------------------
-                # sigma = np.zeros((self.model.W.shape[0], 1))
-                # for name, model in self.models.copy().items():
-                #     sigma += (self.W[name] / self.D) * model.W
-                #
-                # self.model.W = (self.alpha + alpha_bar * self.c) ** -1 * (
-                #         self.alpha * sigma + alpha_bar * self.c * self.solitary_model.W)
-                # # update b -----------------------------------------------------------------
-                # sigma = np.zeros((self.model.b.shape[0], 1))
-                # for name, model in self.models.copy().items():
-                #     sigma += (self.W[name] / self.D) * model.b
-                #
-                # self.model.b = (self.alpha + alpha_bar * self.c) ** -1 * (
-                #         self.alpha * sigma + alpha_bar * self.c * self.solitary_model.b)
-                #
-                # if self.stop_condition % 10 == 0:
-                #     self.costs.append(self.model.test_accuracy(self.X_test, self.y_test))
                 if self.model is not None:
                     model = copy.deepcopy(self.model)
                     # Perform model propagation updates
-                    mp_update(self, parameter="W")
-                    mp_update(self, parameter="b")
-                    # print(f"{self.pname} >> COST::::: {self.model.test_accuracy(self.X_test, self.y_test)}")
+                    # mp_update(self, parameter="W")
+                    # mp_update(self, parameter="b")
+                    mp_update(self)
                     if self.model is None:
                         self.model = model
-                    # if self.stop_condition % 10 == 0:
-                    self.costs.append(self.model.test_cost(self.X_test, self.y_test))
+                    x_test, y_test = self.ldata['x_test'], self.ldata['y_test']
+                    cost = self.model.evaluate(x_test, y_test)
+                    if ACCURACY_METRIC == "loss":
+                        self.costs.append(self.model.summary()['test_loss'])
+                    elif ACCURACY_METRIC == "precision":
+                        self.costs.append(self.model.summary()['precision'])
+                    elif ACCURACY_METRIC == "recall":
+                        self.costs.append(self.model.summary()['recall'])
+                    elif ACCURACY_METRIC == "f1_score":
+                        self.costs.append(self.model.summary()['f1_score'])
+                    else:
+                        self.costs.append(cost)
+                        self.target_accuracy = cost
+                    self.bans.append(len(self.banned))
+                    self.ignores.append(self.message_count_ignr)
+                    if not self.byzantine:
+                        self.calculate_cm()
+                    raise
+
 
     # CL::Calculate primal variables (minimize arg min L(models, Z, A)).
     def update_primal(self, neighbor, respond=True):
@@ -240,15 +280,77 @@ class Node(threading.Thread):
             update = self.check_exchange()
             self.send(neighbor, exchange_variables(self, neighbor, respond=update))
 
+    def fairness_control(self, name, p_j):
+        pct_change = (p_j - self.ff[name]) / self.ff[name] if self.ff[name] > 0 else p_j
+        if pct_change >= EPSILON_FAIRNESS:
+            self.ff[name] = p_j
+        else:
+            log("info", f"{self.pname} banned node {name} --- {p_j} - {self.ff[name]} = {p_j - self.ff[name]}")
+            self.banned.append(name)
+
+    def evaluate_model(self, data):
+        """
+        Evaluate the received model, return True if it's valid False otherwise.
+        @param data:
+        @return:
+        """
+        name = data['sender']['name']
+        model = data['payload']['model']
+        test_sample = sample_xy(self.ldata['x_test'], self.ldata['y_test'], TEST_SAMPLE)
+        p_i = self.model.evaluate(*test_sample)
+        p_j = model.evaluate(*test_sample)
+        c_j = p_j / p_i
+        try:
+            self.cf[name] = 0.2 * self.cf[name] + 0.8 * c_j
+        except KeyError:
+            self.cf[name] = c_j
+
+        log("info", f"{self.pname} :: {name} | p_j={p_j} & p_i ={p_i} & CF={c_j}")
+
+        if self.cf[name] >= CF_THRESHOLD:
+            return True
+        else:
+            self.fairness_control(name, p_j)
+            return False
+
     def get_model(self):
-        return self.model
+        if self.byzantine:
+            random_model = copy.deepcopy(self.model)
+            s = self.model.weights.shape
+            random_model.weights = np.random.rand(s[0], s[1])
+            random_model.evaluate(self.ldata['x_test'], self.ldata['y_test'])
+            # print(f"Byz{self.pname} >> summary={random_model.summary()}")
+            return random_model
+        else:
+            return self.model
 
     def update_models(self, index, model):
         self.models[index] = model
 
+    def calculate_cm(self):
+        inx = list(np.sort([int(peer['name'][1:]) for peer in self.peers]))
+        banned = np.sort([int(b[1:]) for b in self.banned])
+        cm_pred = [0] * len(self.cm_true)
+        for b in banned:
+            cm_pred[inx.index(b)] = 1
+
+        precision = precision_score(self.cm_true, cm_pred, average="macro", zero_division=0)
+        recall = recall_score(self.cm_true, cm_pred, average="macro", zero_division=0)
+        f_score = f1_score(self.cm_true, cm_pred, average="macro", zero_division=0)
+        self.cm['precision'].append(precision)
+        self.cm['recall'].append(recall)
+        self.cm['f_score'].append(f_score)
+
+        # print(f"{self.pname} >> precision={precision} | recall={recall} | f1_score={f_score} | "
+        #       f"true={self.cm_true} & pred={cm_pred}")
+
     def check_exchange(self):
-        update = self.stop_condition > 0
-        return update
+        # if self.target_accuracy >= TARGET_ACCURACY:
+        #     return False
+        if self.stop_condition <= 0:
+            return False
+
+        return True
 
     def exclude_peer(self, peer):
         if peer not in self.excluded_peers:
@@ -267,6 +369,8 @@ class Node(threading.Thread):
             name = peer["name"]
             self.W[name] = w
             self.D += w
+            # initialize fairness factor
+            self.ff[name] = 0
 
     # Creates the TCP/IP server
     def _init_server(self):
@@ -371,17 +475,17 @@ class Node(threading.Thread):
     def get_message_count_recv(self):
         return self.message_count_recv
 
-    def get_random_peer(self, ignore_excluded=False):
+    def get_random_peer(self, ignore_excluded=True):
         log('info', f"{self.pname}: Select a random peer")
         peers_list = []
         if ignore_excluded:
-            for peer in self.peers:
-                if not next((e for e in self.excluded_peers if e["name"] == peer['name']), False):
-                    peers_list.append(peer)
+            excluded_names = [peer['name'] for peer in self.excluded_peers]
+            peers_list = [peer for peer in self.peers if peer['name'] not in excluded_names]
+            # print(f"{self.pname} peers_list >> {[p['name'] for p in peers_list ]}")
         else:
             peers_list = self.peers
         if len(peers_list) > 0:
-            # random.seed(self.stop_condition)
+            random.seed(self.stop_condition)
             peer = random.choice(peers_list)
             if self.connect(peer) is not None:
                 time.sleep(0.1)  # wait for message exchange to take place
@@ -399,5 +503,4 @@ class Node(threading.Thread):
                     return self.responses[peer_id(peer)][mtype]
             except:
                 pass
-
     # ----------------------------------------------------------------------------------------------------------------------
