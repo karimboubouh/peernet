@@ -8,15 +8,15 @@ from peernet.preprocessing import pre_mnist
 
 def experiment():
     config = {
-        'nodes': 20,
+        'nodes': 50,
         'topology': 'random',  # (static, random, ErdosRenyi)
         'data': {'dataset': 'mnist.data', 'pre': pre_mnist, 'iid': True, 'balancedness': 1},
         'algorithm': {'wrapper': 'sklearn', 'model': 'logistic'},
-        'protocol': 'CMP',  # CMP or MP
+        'protocol': 'MP',  # CMP or MP
         'args': {
             'behavior': {'Byzantine': -1, 'model': 'random'},  # Byzantine: -1: no byzantine
             'algorithm': {'solver': 'saga', 'tol': 1e-1, 'C': 1e4},
-            'protocol': {'confidence': True, 'results': True}
+            'protocol': {'confidence': False, 'results': True}
         }
     }
     # communication_rounds
@@ -42,7 +42,7 @@ if __name__ == '__main__':
     np.random.seed(0)
     random.seed(0)
     experiment()
-    # plot(20, "communication_rounds")
+    # plot(50, "communication_rounds")
     # sota()
 
 

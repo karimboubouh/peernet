@@ -51,9 +51,8 @@ def cmp_update(node, parameter="W"):
             c = 1
 
         for name, model in node.models.copy().items():
-            if name != "w7":
-                theta_k = model.weights
-                sigma += (node.W[name] / node.D) * theta_k
+            theta_k = model.weights
+            sigma += (node.W[name] / node.D) * theta_k
 
         log("info", f"{node.pname}: Model to be updated (Parameter: {parameter}) {np.sum(theta)}")
 
