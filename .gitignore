@@ -14,8 +14,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
 parts/
 sdist/
 var/
@@ -128,10 +126,7 @@ iko/
 .idea/
 test.py
 Trash
-data/
 save/
 rest/
 datasets/*
-datasets/mnist.data
-datasets/
 playground/
