@@ -235,6 +235,7 @@ class Node(threading.Thread):
                     self.bans.append(len(self.banned))
                     self.ignores.append(self.message_count_ignr)
                     if not self.byzantine and len(self.cm_true) > 0:
+                        print("HERE")
                         self.calculate_cm()
 
     # MP::Calculate model updates over network
@@ -266,10 +267,9 @@ class Node(threading.Thread):
                         self.target_accuracy = cost
                     self.bans.append(len(self.banned))
                     self.ignores.append(self.message_count_ignr)
-                    if not self.byzantine:
+                    if not self.byzantine and len(self.cm_true) > 0:
+                        print("HERE")
                         self.calculate_cm()
-                    raise
-
 
     # CL::Calculate primal variables (minimize arg min L(models, Z, A)).
     def update_primal(self, neighbor, respond=True):
