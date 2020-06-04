@@ -12,7 +12,7 @@ from .message import exchange_variables
 from .protocol import *
 from .node_connection import NodeConnection
 from .helpers import log, bold, unique_id, create_tcp_socket, peer_id, _p, sample_xy
-from .updates import mp_update, cl_update_primal, cl_update_secondary, cl_update_dual, cmp_update
+from .updates import mp_update, cl_update_primal, cl_update_secondary, cl_update_dual, cdpl_update
 
 
 # Class Node
@@ -209,14 +209,14 @@ class Node(threading.Thread):
         else:
             raise Exception(f"Wrong type for argument 'include': ({type(include)})!")
 
-    # CMP::Calculate model updates over network
-    def cmp_calculate_update(self, data):
+    # CDPL::Calculate model updates over network
+    def cdpl_calculate_update(self, data):
         with self.lock:
             if self.check_exchange():
                 self.stop_condition -= 1
                 if self.model is not None:
                     model = copy.deepcopy(self.model)
-                    cmp_update(self)
+                    cdpl_update(self)
                     if self.model is None:
                         self.model = model
                     x_test, y_test = self.ldata['x_test'], self.ldata['y_test']
@@ -235,7 +235,6 @@ class Node(threading.Thread):
                     self.bans.append(len(self.banned))
                     self.ignores.append(self.message_count_ignr)
                     if not self.byzantine and len(self.cm_true) > 0:
-                        print("HERE")
                         self.calculate_cm()
 
     # MP::Calculate model updates over network
@@ -268,7 +267,6 @@ class Node(threading.Thread):
                     self.bans.append(len(self.banned))
                     self.ignores.append(self.message_count_ignr)
                     if not self.byzantine and len(self.cm_true) > 0:
-                        print("HERE")
                         self.calculate_cm()
 
     # CL::Calculate primal variables (minimize arg min L(models, Z, A)).
@@ -284,9 +282,11 @@ class Node(threading.Thread):
         pct_change = (p_j - self.ff[name]) / self.ff[name] if self.ff[name] > 0 else p_j
         if pct_change >= EPSILON_FAIRNESS:
             self.ff[name] = p_j
+            return True
         else:
             log("info", f"{self.pname} banned node {name} --- {p_j} - {self.ff[name]} = {p_j - self.ff[name]}")
             self.banned.append(name)
+            return False
 
     def evaluate_model(self, data):
         """
@@ -306,6 +306,10 @@ class Node(threading.Thread):
             self.cf[name] = c_j
 
         log("info", f"{self.pname} :: {name} | p_j={p_j} & p_i ={p_i} & CF={c_j}")
+
+        # TODO foe experimenting only
+        # if not self.fairness_control(name, p_j):
+        #     return False
 
         if self.cf[name] >= CF_THRESHOLD:
             return True

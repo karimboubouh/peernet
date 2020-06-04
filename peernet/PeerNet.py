@@ -221,7 +221,7 @@ class PeerNet:
         end_time = round(time.time() - start_time, 4)
         print(bold(f"\nTraining done in {end_time} seconds."))
 
-        self.analysis(analysis)  # measure="std"
+        self.analysis(analysis)  # , measure="std"
 
     def train2(self, **kwargs):
         c.TRAINED_MODELS = len(self.nodes)
@@ -271,15 +271,24 @@ class PeerNet:
             elif measure == "max":
                 self.results = np.max([node.costs for node in self.nodes], axis=0)
         elif atype == 'byzantine':
+            length = max([len(node.costs) for node in self.nodes])
+            for node in self.nodes:
+                node.costs.extend([node.costs[-1]] * (length - len(node.costs)))
             costs = np.array([node.costs for node in self.nodes if node.byzantine is False])
             self.results = np.mean(costs, axis=0)
         elif atype == 'byzantine_metrics':
-            precision = np.mean([node.cm['precision'][-1] for node in self.nodes if node.byzantine is False], axis=0)
-            recall = np.mean([node.cm['recall'][-1] for node in self.nodes if node.byzantine is False], axis=0)
-            f_score = np.mean([node.cm['f_score'][-1] for node in self.nodes if node.byzantine is False], axis=0)
-            accuracy = np.mean([node.costs[-1] for node in self.nodes if node.byzantine is False], axis=0)
-            # self.results = accuracy, precision, recall, f_score
-            print(f"Accuracy={accuracy} | precision={precision} | recall={recall} | f_score={f_score}")
+            length = max([len(node.costs) for node in self.nodes])
+            for node in self.nodes:
+                if not node.byzantine:
+                    node.costs.extend([node.costs[-1]] * (length - len(node.costs)))
+                    node.cm['precision'].extend([node.cm['precision'][-1]] * (length - len(node.cm['precision'])))
+                    node.cm['recall'].extend([node.cm['recall'][-1]] * (length - len(node.cm['recall'])))
+                    node.cm['f_score'].extend([node.cm['f_score'][-1]] * (length - len(node.cm['f_score'])))
+            precision = np.mean([node.cm['precision'] for node in self.nodes if node.byzantine is False], axis=0)
+            recall = np.mean([node.cm['recall'] for node in self.nodes if node.byzantine is False], axis=0)
+            f_score = np.mean([node.cm['f_score'] for node in self.nodes if node.byzantine is False], axis=0)
+            accuracy = np.mean([node.costs for node in self.nodes if node.byzantine is False], axis=0)
+            self.results = accuracy, precision, recall, f_score
         elif atype == 'contribution_factor':
             blength = max([len(node.bans) for node in self.nodes])
             ilength = max([len(node.ignores) for node in self.nodes])
@@ -291,6 +300,9 @@ class PeerNet:
         elif atype == 'data_unbalancedness':
             costs = [node.costs[-1] for node in self.nodes]
             self.results = np.sum(costs)
+        elif atype == 'ban_epsilon':
+            costs = [node.costs[-1] for node in self.nodes]
+            self.results = np.mean(costs)
         elif atype == 'graph_sparsity':
             costs = [node.costs[-1] for node in self.nodes]
             self.results = np.sum(costs)
@@ -351,8 +363,7 @@ class PeerNet:
         else:
             pass
 
-    def info(self, show="peers", verbose=False):
-        log("Printing information...")
+    def info(self, show="data", verbose=False):
         if show == "peers":
             print(f"List of nodes ({len(self.nodes)})")
             for node in self.nodes:
@@ -362,6 +373,8 @@ class PeerNet:
                     for peer in node.peers:
                         log(f"{peer}")
                     log("---")
+        elif show == "data":
+            print([data_size(node) for node in self.nodes])
 
     # -----------------------------------------------------------------------------
 
@@ -371,7 +384,7 @@ class PeerNet:
             raise SystemExit(log('exception', "Unknown protocol."))
         if protocol == "MP":
             return algorithms.model_propagation
-        elif protocol == "CMP":
+        elif protocol == "CDPL":
             return algorithms.controlled_model_propagation
         elif protocol == "CL":
             return algorithms.collaborative_learning

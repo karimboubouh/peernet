@@ -107,7 +107,7 @@ def controlled_model_propagation(node, wrapper, model, args=None):
 
     # Wait for the model reaches a target accuracy
     # todo wait until done : node.reached_target_accuracy == True
-    wait_until(finished, 600, 1, node)
+    wait_until(finished, 600, 2, node)
 
     # evaluate the final model
     node.model.evaluate(x_test, y_test)
@@ -383,7 +383,7 @@ def finished(node):
     # if node.stop_condition == 0:
     if not node.check_exchange():
         return True
-    # if node.name == 'w3' and node.stop_condition % 20 == 0:
+    # if node.name == 'w3':
     #     print(f"{node.pname} ++ {node.stop_condition}")
     return False
 

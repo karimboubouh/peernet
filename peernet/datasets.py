@@ -47,8 +47,10 @@ def mnist_iid(x_train, y_train, num_users, balancedness, lower=None, upper=None)
     mu = int(len(dataset) / num_users)
     if not lower:
         lower = 100  # 1 / 2 * mu
+        # lower = 1 / 2 * mu
     if not upper:
         upper = 2 * mu - lower  # 3 / 2 * mu
+        # upper = 3 / 2 * mu
     sigma = balancedness * (upper - lower) / 2  # balancedness * mu / 2
     cpm = stats.truncnorm((lower - mu) / sigma, (upper - mu) / sigma, loc=mu, scale=sigma)
     num_items = list(np.round(cpm.rvs(num_users)).astype(np.int))

@@ -36,7 +36,7 @@ def mp_update(node, parameter="W"):
         return
 
 
-def cmp_update(node, parameter="W"):
+def cdpl_update(node, parameter="W"):
     """Calculate controlled model propagation update."""
     try:
         theta = node.model.weights
@@ -44,7 +44,7 @@ def cmp_update(node, parameter="W"):
         sigma = np.zeros(theta.shape)
         if node.use_cf:
             if CONFIDENCE_MEASURE == 'max':
-                c = 1 / np.max(list(node.cf.values()))
+                c = 1 / max(1, np.max(list(node.cf.values())))
             else:
                 c = 1 / np.mean(list(node.cf.values()))
         else:

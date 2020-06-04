@@ -1,7 +1,7 @@
 # DEBUG_LEVEL: 0 - NO DEBUG | 1 -'EXCEPTION' | 2 -'ERROR' | 3 -'WARNING' | 4 -'INFO' and 'SUCCESS'
-DEBUG_LEVEL = 0
+DEBUG_LEVEL = 1
 # START_PORT
-START_PORT = 15000
+START_PORT = 45000
 # TOPOLOGY
 TOPOLOGY = {
     'random': 'peernet.network.arch.random_network',
@@ -64,10 +64,9 @@ BALANCED_DATA_SIZE = 30000
 # ------------------------------  ALGORITHM Related ---------------------------
 STOP_CONDITION = 100
 TEST_SAMPLE = 1000
-CF_THRESHOLD = 0.5  # 0.75
-EPSILON_FAIRNESS = -0.2  # range[-1,1] | chosen values (0.2 ,0.1, 0, -0.1, -0.2)
-CONFIDENCE_MEASURE = "mean"  # mean or max (same behavior)
+CF_THRESHOLD = 0.8  # 0.75
+EPSILON_FAIRNESS = -0.1  # range[-1,1] | chosen values (0.2 ,0.1, 0, -0.1, -0.2)
+CONFIDENCE_MEASURE = "max"  # mean or max (same behavior)
 ACCURACY_METRIC = "accuracy"  # accuracy, loss, precision, recall or f1_score
-
 # ------------------------------  PROTOCOL Related ----------------------------
-PROTOCOLS = ["MP", "CMP", "CL", "LL"]
+PROTOCOLS = ["MP", "CDPL", "CL", "LL"]

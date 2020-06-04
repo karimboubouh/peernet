@@ -73,7 +73,8 @@ class NodeConnection(threading.Thread):
                 self.handle_request(buffer)
                 self.server.message_count_recv = self.server.message_count_recv + 1
             except pickle.UnpicklingError as e:
-                log('exception', f"{self.server.pname}: NodeConnection: Corrupted message. {len(buffer)}")
+                pass
+                # log('exception', f"{self.server.pname}: NodeConnection: Corrupted message. {len(buffer)}")
             except OverflowError as e:
                 log('exception', f"{self.server.pname}: OverflowError. {len(buffer)}")
             except KeyError as e:
@@ -175,8 +176,8 @@ class NodeConnection(threading.Thread):
 
         if self.server.protocol == "MP":
             self.do_mp_exchange_model(data)
-        elif self.server.protocol == "CMP":
-            self.do_cmp_exchange_model(data)
+        elif self.server.protocol == "CDPL":
+            self.do_cdpl_exchange_model(data)
         else:
             raise ValueError("Protocol not recognized.")
 
@@ -199,7 +200,7 @@ class NodeConnection(threading.Thread):
                         self.server.send(neighbor, exchange)
                     else:
                         self.server.stop_condition = 0
-                        print("FFFFFF")
+                        log("warning", f"{self.server.pname} Has no communication peers !")
                         return
         else:
             self.server.exclude_peer(find_peer(self.server, data))
@@ -208,11 +209,11 @@ class NodeConnection(threading.Thread):
                 exchange = exchange_model(self.server)
                 self.server.send(neighbor, exchange)
             else:
-                print("DDDDDD")
+                log("warning", f"{self.server.pname} Has no communication peers")
                 self.server.stop_condition = 0
                 return
 
-    def do_cmp_exchange_model(self, data):
+    def do_cdpl_exchange_model(self, data):
         # if node is banned ignore exchange operation
         banned = False
         name = data['sender']['name']
@@ -241,7 +242,7 @@ class NodeConnection(threading.Thread):
 
             # update while not stop condition
             if self.server.check_exchange():
-                self.server.cmp_calculate_update(data)
+                self.server.cdpl_calculate_update(data)
                 # time.sleep(random.randint(10, 100) / 1000)
                 if self.server.check_exchange():
                     neighbor = self.server.get_random_peer(ignore_excluded=True)
@@ -250,7 +251,7 @@ class NodeConnection(threading.Thread):
                         self.server.send(neighbor, exchange)
                     else:
                         self.server.stop_condition = 0
-                        print("FFFFFF")
+                        log("warning", f"{self.server.pname} Has no communication peers !")
                         return
         else:
             self.server.exclude_peer(find_peer(self.server, data))
@@ -259,7 +260,7 @@ class NodeConnection(threading.Thread):
                 exchange = exchange_model(self.server)
                 self.server.send(neighbor, exchange)
             else:
-                print("DDDDDD")
+                log("warning", f"{self.server.pname} Has no communication peers")
                 self.server.stop_condition = 0
                 return
 
@@ -267,7 +268,8 @@ class NodeConnection(threading.Thread):
         peer = find_peer(self.server, data)
         self.server.exclude_peer(peer)
         self.server.stop_condition -= 1
-        self.server.costs.append(self.server.costs[-1])
+        if len(self.server.costs) > 0:
+            self.server.costs.append(self.server.costs[-1])
         if self.server.check_exchange():
             neighbor = self.server.get_random_peer(ignore_excluded=True)
             if neighbor:
@@ -315,6 +317,7 @@ class NodeConnection(threading.Thread):
             self.peer = upeer
             try:
                 max_size = max(peer.get("data_size", 0) for peer in self.server.peers)
+                max_size = max(data_size(self.server), max_size)
                 self.server.c = M_CONSTANT + data_size(self.server) / max_size
             except ZeroDivisionError:
                 log('exception', f"{self.server.pname}: Max data sizes equal to zero")

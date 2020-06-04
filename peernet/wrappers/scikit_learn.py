@@ -14,7 +14,7 @@ class SklearnWrapper:
         except (IndexError, AttributeError):
             pass
 
-    def evaluate(self, *args, metrics=False, **kwargs):
+    def evaluate(self, *args, metrics=True, **kwargs):
         _score = self.sk_model.score(*args, **kwargs)
         self.metrics['test_score'] = round(_score, 4)
         if metrics:
@@ -25,9 +25,9 @@ class SklearnWrapper:
         pred = self.sk_model.predict(args[0])
         pred_proba = self.sk_model.predict_proba(args[0])
         self.metrics['test_loss'] = log_loss(args[1], pred_proba, eps=1e-15)
-        self.metrics['precision'] = precision_score(args[1], pred, average="macro", zero_division=0)
-        self.metrics['recall'] = recall_score(args[1], pred, average="macro", zero_division=0)
-        self.metrics['f1_score'] = f1_score(args[1], pred, average="macro", zero_division=0)
+        # self.metrics['precision'] = precision_score(args[1], pred, average="macro", zero_division=0)
+        # self.metrics['recall'] = recall_score(args[1], pred, average="macro", zero_division=0)
+        # self.metrics['f1_score'] = f1_score(args[1], pred, average="macro", zero_division=0)
         try:
             self.metrics['test_size'] = args[0].shape[0]
         except (IndexError, AttributeError):
