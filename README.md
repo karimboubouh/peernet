@@ -30,9 +30,9 @@ plots.figure(file, config)
 ```
 > Generates a file with name `communication_rounds_{number_of_nodes}_F` 
 
-Plot the result using the function `plot(number_of_nodes, analysis)`
+Plot the result using the function `plots.plot(number_of_nodes, analysis)`
 ```
-plots.plot(50, "communication_rounds"
+plots.plot(50, "communication_rounds")
 ```
 
 ### Byzantine resilience
@@ -61,14 +61,14 @@ plots.byzantine_metrics(file)
 # MP/CDPL, confidence True/False
 mp_exp.data_unbalancedness(**config)
 ```
-Plot the result using the function `plot(20, "data_unbalancedness")`
+Plot the result using the function `plots.plot(50, "data_unbalancedness")`
 
 ### Graph sparsity
 ```
 # MP/CDPL, confidence True/False
 mp_exp.graph_sparsity(**config)
 ```
-Plot the result using the function `plot(20, "graph_sparsity")`
+Plot the result using the function `plots.plot(50, "graph_sparsity")`
 
 ## Customization
 To customize the setting of the prototype edit the parameters in `peernet/constants.py`

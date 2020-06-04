@@ -19,13 +19,13 @@ def sota():
 
 def experiment():
     config = {
-        'nodes': 10,
+        'nodes': 50,
         'topology': 'random',  # (static, random, ErdosRenyi)
         'data': {'dataset': 'mnist.data', 'pre': pre_mnist, 'iid': True, 'balancedness': 1},
         'algorithm': {'wrapper': 'sklearn', 'model': 'logistic'},
         'protocol': 'CDPL',  # MP or CDPL
         'args': {
-            'behavior': {'Byzantine': 2, 'model': 'random'},  # Byzantine: -1: no byzantine
+            'behavior': {'Byzantine': 5, 'model': 'random'},  # Byzantine: -1: no byzantine
             'algorithm': {'solver': 'saga', 'tol': 1e-1, 'C': 1e4},
             'protocol': {'confidence': True, 'results': False}
         }
