@@ -1,19 +1,29 @@
 # Paper: Robust P2P Personalized Learning
 
+Accepted in the 39th International Symposium on Reliable Distributed Systems (SRDS), 2020
+
+**Paper**: [Robust-P2P-Personalized-Learning-SRDS-2020.pdf](https://raw.githubusercontent.com/karimboubouh/peernet/master/Robust-P2P-Personalized-Learning-SRDS-2020.pdf)
+
+---
+
 ## Install requirements
+
 `pip install -r requirements.txt`
 
 ## Run
+
 `python run.py`
 
 ## Experiments
 
 ### Communication rounds
+
 ```
 # MP, confidence False
 mp_exp.communication_rounds(**config)
 plots.figure(file, config)
 ```
+
 > Generates a file with name `communication_rounds_{number_of_nodes}_N` 
 
 ```
@@ -21,6 +31,7 @@ plots.figure(file, config)
 mp_exp.communication_rounds(**config)
 plots.figure(file, config)
 ```
+
 > Generates a file with name `communication_rounds_{number_of_nodes}_C` 
 
 ```
@@ -28,21 +39,26 @@ plots.figure(file, config)
 mp_exp.communication_rounds(**config)
 plots.figure(file, config)
 ```
+
 > Generates a file with name `communication_rounds_{number_of_nodes}_F` 
 
 Plot the result using the function `plots.plot(number_of_nodes, analysis)`
+
 ```
 plots.plot(50, "communication_rounds")
 ```
 
 ### Byzantine resilience
+
 Same analogy
+
 ```
 # MP/CDPL, confidence True/False
 mp_exp.byzantine(**config)
 ```
 
 ### Contribution factor
+
 ```
 # CDPL
 mp_exp.contribution_factor(**config)
@@ -50,6 +66,7 @@ plots.contribution_factor(file)
 ```
 
 ### Byzantine detection precision
+
 ```
 # CDPL
 file = mp_exp.byzantine_metrics(**config)
@@ -57,20 +74,25 @@ plots.byzantine_metrics(file)
 ```
 
 ### data unbalancedness
+
 ```
 # MP/CDPL, confidence True/False
 mp_exp.data_unbalancedness(**config)
 ```
+
 Plot the result using the function `plots.plot(50, "data_unbalancedness")`
 
 ### Graph sparsity
+
 ```
 # MP/CDPL, confidence True/False
 mp_exp.graph_sparsity(**config)
 ```
+
 Plot the result using the function `plots.plot(50, "graph_sparsity")`
 
 ## Customization
+
 To customize the setting of the prototype edit the parameters in `peernet/constants.py`
 
 Default params:
